@@ -57,13 +57,31 @@ export const LocationSearch: React.FC<LocationSearchProps> = ({
         try {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
-          // Reverse lookup or set detected location
+          let cityName = "Current Location";
+          let admin = "";
+          let countryName = "Auto-detected";
+
+          try {
+            const revRes = await fetch(
+              `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`
+            );
+            if (revRes.ok) {
+              const geoData = await revRes.json();
+              cityName = geoData.city || geoData.locality || geoData.principalSubdivision || "Current Location";
+              admin = geoData.principalSubdivision || "";
+              countryName = geoData.countryName || "Auto-detected";
+            }
+          } catch (geoErr) {
+            console.warn("Reverse geocode fallback:", geoErr);
+          }
+
           const detectedLoc: LocationData = {
-            id: `detected_${lat}_${lon}`,
-            name: "Current Location",
+            id: `detected_${lat.toFixed(4)}_${lon.toFixed(4)}`,
+            name: cityName,
+            admin1: admin,
             latitude: lat,
             longitude: lon,
-            country: "Auto-detected",
+            country: countryName,
             timezone: "auto",
           };
           onSelectLocation(detectedLoc);

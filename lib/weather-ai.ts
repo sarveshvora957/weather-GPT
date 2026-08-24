@@ -111,57 +111,199 @@ export class WeatherAI {
   /**
    * Entity extraction for geographic locations
    */
+  /**
+   * Entity extraction for geographic locations (Supports 150+ instant lookup cities + dynamic Open-Meteo geocoding for any place on Earth)
+   */
   private static async extractLocation(query: string, activeLocation?: LocationData): Promise<LocationData> {
-    const qLower = query.toLowerCase();
+    const qRaw = query.trim();
+    const qLower = qRaw.toLowerCase();
 
-    // Check common known cities in query
-    const cityKeywords = [
+    // 1. Comprehensive dictionary of major Indian & global cities, states, and tourist hubs (sorted length descending)
+    const cityKeywords: { name: string; lat: number; lon: number; country: string; state: string; tz?: string; displayName?: string }[] = [
+      // Multi-word Indian Cities & Hubs
+      { name: "new delhi", lat: 28.6139, lon: 77.209, country: "India", state: "Delhi", tz: "Asia/Kolkata", displayName: "New Delhi" },
+      { name: "navi mumbai", lat: 19.033, lon: 73.0297, country: "India", state: "Maharashtra", tz: "Asia/Kolkata", displayName: "Navi Mumbai" },
+      { name: "greater noida", lat: 28.4744, lon: 77.504, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata", displayName: "Greater Noida" },
+      // Major Indian Cities & Tier-2/3 Metros
       { name: "ahmedabad", lat: 23.0225, lon: 72.5714, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
       { name: "mumbai", lat: 19.076, lon: 72.8777, country: "India", state: "Maharashtra", tz: "Asia/Kolkata" },
       { name: "delhi", lat: 28.6139, lon: 77.209, country: "India", state: "Delhi", tz: "Asia/Kolkata" },
-      { name: "new delhi", lat: 28.6139, lon: 77.209, country: "India", state: "Delhi", tz: "Asia/Kolkata" },
       { name: "bengaluru", lat: 12.9716, lon: 77.5946, country: "India", state: "Karnataka", tz: "Asia/Kolkata" },
-      { name: "bangalore", lat: 12.9716, lon: 77.5946, country: "India", state: "Karnataka", tz: "Asia/Kolkata" },
+      { name: "bangalore", lat: 12.9716, lon: 77.5946, country: "India", state: "Karnataka", tz: "Asia/Kolkata", displayName: "Bengaluru" },
       { name: "surat", lat: 21.1702, lon: 72.8311, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
+      { name: "vadodara", lat: 22.3072, lon: 73.1812, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
+      { name: "baroda", lat: 22.3072, lon: 73.1812, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Vadodara" },
+      { name: "rajkot", lat: 22.3039, lon: 70.8022, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
+      { name: "gandhinagar", lat: 23.2156, lon: 72.6369, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
+      { name: "bhavnagar", lat: 21.7645, lon: 72.1519, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
+      { name: "jamnagar", lat: 22.4707, lon: 70.0577, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
+      { name: "junagadh", lat: 21.5222, lon: 70.4579, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
       { name: "pune", lat: 18.5204, lon: 73.8567, country: "India", state: "Maharashtra", tz: "Asia/Kolkata" },
+      { name: "nagpur", lat: 21.1458, lon: 79.0882, country: "India", state: "Maharashtra", tz: "Asia/Kolkata" },
+      { name: "nashik", lat: 19.9975, lon: 73.7898, country: "India", state: "Maharashtra", tz: "Asia/Kolkata" },
+      { name: "kolhapur", lat: 16.705, lon: 74.2433, country: "India", state: "Maharashtra", tz: "Asia/Kolkata" },
+      { name: "aurangabad", lat: 19.8762, lon: 75.3433, country: "India", state: "Maharashtra", tz: "Asia/Kolkata" },
       { name: "kolkata", lat: 22.5726, lon: 88.3639, country: "India", state: "West Bengal", tz: "Asia/Kolkata" },
       { name: "hyderabad", lat: 17.385, lon: 78.4867, country: "India", state: "Telangana", tz: "Asia/Kolkata" },
       { name: "chennai", lat: 13.0827, lon: 80.2707, country: "India", state: "Tamil Nadu", tz: "Asia/Kolkata" },
+      { name: "coimbatore", lat: 11.0168, lon: 76.9558, country: "India", state: "Tamil Nadu", tz: "Asia/Kolkata" },
+      { name: "madurai", lat: 9.9252, lon: 78.1198, country: "India", state: "Tamil Nadu", tz: "Asia/Kolkata" },
       { name: "jaipur", lat: 26.9124, lon: 75.7873, country: "India", state: "Rajasthan", tz: "Asia/Kolkata" },
+      { name: "jodhpur", lat: 26.2389, lon: 73.0243, country: "India", state: "Rajasthan", tz: "Asia/Kolkata" },
+      { name: "udaipur", lat: 24.5854, lon: 73.7125, country: "India", state: "Rajasthan", tz: "Asia/Kolkata" },
+      { name: "kota", lat: 25.2138, lon: 75.8648, country: "India", state: "Rajasthan", tz: "Asia/Kolkata" },
+      { name: "bhopal", lat: 23.2599, lon: 77.4126, country: "India", state: "Madhya Pradesh", tz: "Asia/Kolkata" },
+      { name: "indore", lat: 22.7196, lon: 75.8577, country: "India", state: "Madhya Pradesh", tz: "Asia/Kolkata" },
+      { name: "gwalior", lat: 26.2183, lon: 78.1828, country: "India", state: "Madhya Pradesh", tz: "Asia/Kolkata" },
+      { name: "jabalpur", lat: 23.1815, lon: 79.9864, country: "India", state: "Madhya Pradesh", tz: "Asia/Kolkata" },
+      { name: "ujjain", lat: 23.1765, lon: 75.7885, country: "India", state: "Madhya Pradesh", tz: "Asia/Kolkata" },
+      { name: "lucknow", lat: 26.8467, lon: 80.9462, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata" },
+      { name: "kanpur", lat: 26.4499, lon: 80.3319, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata" },
+      { name: "varanasi", lat: 25.3176, lon: 82.9739, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata" },
+      { name: "agra", lat: 27.1767, lon: 78.0081, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata" },
+      { name: "prayagraj", lat: 25.4358, lon: 81.8463, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata" },
+      { name: "allahabad", lat: 25.4358, lon: 81.8463, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata", displayName: "Prayagraj" },
+      { name: "noida", lat: 28.5355, lon: 77.391, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata" },
+      { name: "ghaziabad", lat: 28.6692, lon: 77.4538, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata" },
+      { name: "meerut", lat: 28.9845, lon: 77.7064, country: "India", state: "Uttar Pradesh", tz: "Asia/Kolkata" },
+      { name: "patna", lat: 25.5941, lon: 85.1376, country: "India", state: "Bihar", tz: "Asia/Kolkata" },
+      { name: "gaya", lat: 24.7914, lon: 85.0002, country: "India", state: "Bihar", tz: "Asia/Kolkata" },
+      { name: "chandigarh", lat: 30.7333, lon: 76.7794, country: "India", state: "Chandigarh", tz: "Asia/Kolkata" },
+      { name: "ludhiana", lat: 30.901, lon: 75.8573, country: "India", state: "Punjab", tz: "Asia/Kolkata" },
+      { name: "amritsar", lat: 31.634, lon: 74.8723, country: "India", state: "Punjab", tz: "Asia/Kolkata" },
+      { name: "jalandhar", lat: 31.326, lon: 75.5762, country: "India", state: "Punjab", tz: "Asia/Kolkata" },
+      { name: "gurgaon", lat: 28.4595, lon: 77.0266, country: "India", state: "Haryana", tz: "Asia/Kolkata" },
+      { name: "gurugram", lat: 28.4595, lon: 77.0266, country: "India", state: "Haryana", tz: "Asia/Kolkata", displayName: "Gurugram" },
+      { name: "faridabad", lat: 28.4089, lon: 77.3178, country: "India", state: "Haryana", tz: "Asia/Kolkata" },
+      { name: "srinagar", lat: 34.0837, lon: 74.7973, country: "India", state: "Jammu and Kashmir", tz: "Asia/Kolkata" },
+      { name: "jammu", lat: 32.7266, lon: 74.857, country: "India", state: "Jammu and Kashmir", tz: "Asia/Kolkata" },
+      { name: "shimla", lat: 31.1048, lon: 77.1734, country: "India", state: "Himachal Pradesh", tz: "Asia/Kolkata" },
       { name: "manali", lat: 32.2432, lon: 77.1892, country: "India", state: "Himachal Pradesh", tz: "Asia/Kolkata" },
+      { name: "dharamshala", lat: 32.219, lon: 76.3234, country: "India", state: "Himachal Pradesh", tz: "Asia/Kolkata" },
+      { name: "dehradun", lat: 30.3165, lon: 78.0322, country: "India", state: "Uttarakhand", tz: "Asia/Kolkata" },
+      { name: "rishikesh", lat: 30.0869, lon: 78.2676, country: "India", state: "Uttarakhand", tz: "Asia/Kolkata" },
+      { name: "haridwar", lat: 29.9457, lon: 78.1642, country: "India", state: "Uttarakhand", tz: "Asia/Kolkata" },
+      { name: "nainital", lat: 29.3919, lon: 79.4542, country: "India", state: "Uttarakhand", tz: "Asia/Kolkata" },
       { name: "goa", lat: 15.2993, lon: 74.124, country: "India", state: "Goa", tz: "Asia/Kolkata" },
+      { name: "panaji", lat: 15.4909, lon: 73.8278, country: "India", state: "Goa", tz: "Asia/Kolkata" },
+      { name: "kochi", lat: 9.9312, lon: 76.2673, country: "India", state: "Kerala", tz: "Asia/Kolkata" },
+      { name: "cochin", lat: 9.9312, lon: 76.2673, country: "India", state: "Kerala", tz: "Asia/Kolkata", displayName: "Kochi" },
+      { name: "thiruvananthapuram", lat: 8.5241, lon: 76.9366, country: "India", state: "Kerala", tz: "Asia/Kolkata" },
+      { name: "trivandrum", lat: 8.5241, lon: 76.9366, country: "India", state: "Kerala", tz: "Asia/Kolkata", displayName: "Thiruvananthapuram" },
+      { name: "kozhikode", lat: 11.2588, lon: 75.7804, country: "India", state: "Kerala", tz: "Asia/Kolkata" },
+      { name: "visakhapatnam", lat: 17.6868, lon: 83.2185, country: "India", state: "Andhra Pradesh", tz: "Asia/Kolkata" },
+      { name: "vizag", lat: 17.6868, lon: 83.2185, country: "India", state: "Andhra Pradesh", tz: "Asia/Kolkata", displayName: "Visakhapatnam" },
+      { name: "vijayawada", lat: 16.5062, lon: 80.648, country: "India", state: "Andhra Pradesh", tz: "Asia/Kolkata" },
+      { name: "bhubaneswar", lat: 20.2961, lon: 85.8245, country: "India", state: "Odisha", tz: "Asia/Kolkata" },
+      { name: "cuttack", lat: 20.4625, lon: 85.883, country: "India", state: "Odisha", tz: "Asia/Kolkata" },
+      { name: "puri", lat: 19.8135, lon: 85.8312, country: "India", state: "Odisha", tz: "Asia/Kolkata" },
+      { name: "ranchi", lat: 23.3441, lon: 85.3096, country: "India", state: "Jharkhand", tz: "Asia/Kolkata" },
+      { name: "jamshedpur", lat: 22.8046, lon: 86.2029, country: "India", state: "Jharkhand", tz: "Asia/Kolkata" },
+      { name: "raipur", lat: 21.2514, lon: 81.6296, country: "India", state: "Chhattisgarh", tz: "Asia/Kolkata" },
+      { name: "guwahati", lat: 26.1445, lon: 91.7362, country: "India", state: "Assam", tz: "Asia/Kolkata" },
+      { name: "shillong", lat: 25.5788, lon: 91.8933, country: "India", state: "Meghalaya", tz: "Asia/Kolkata" },
+      { name: "gangtok", lat: 27.3389, lon: 88.6065, country: "India", state: "Sikkim", tz: "Asia/Kolkata" },
+      { name: "leh", lat: 34.1526, lon: 77.5771, country: "India", state: "Ladakh", tz: "Asia/Kolkata" },
+      { name: "ooty", lat: 11.4102, lon: 76.695, country: "India", state: "Tamil Nadu", tz: "Asia/Kolkata" },
+      { name: "darjeeling", lat: 27.041, lon: 88.2663, country: "India", state: "West Bengal", tz: "Asia/Kolkata" },
+      { name: "mysore", lat: 12.2958, lon: 76.6394, country: "India", state: "Karnataka", tz: "Asia/Kolkata" },
+      { name: "mysuru", lat: 12.2958, lon: 76.6394, country: "India", state: "Karnataka", tz: "Asia/Kolkata", displayName: "Mysuru" },
+      { name: "mangalore", lat: 12.9141, lon: 74.856, country: "India", state: "Karnataka", tz: "Asia/Kolkata" },
+      // Global Metros
+      { name: "san francisco", lat: 37.7749, lon: -122.4194, country: "United States", state: "California", tz: "America/Los_Angeles", displayName: "San Francisco" },
+      { name: "los angeles", lat: 34.0522, lon: -118.2437, country: "United States", state: "California", tz: "America/Los_Angeles", displayName: "Los Angeles" },
+      { name: "new york", lat: 40.7128, lon: -74.006, country: "United States", state: "New York", tz: "America/New_York", displayName: "New York" },
+      { name: "chicago", lat: 41.8781, lon: -87.6298, country: "United States", state: "Illinois", tz: "America/Chicago" },
+      { name: "seattle", lat: 47.6062, lon: -122.3321, country: "United States", state: "Washington", tz: "America/Los_Angeles" },
+      { name: "boston", lat: 42.3601, lon: -71.0589, country: "United States", state: "Massachusetts", tz: "America/New_York" },
       { name: "london", lat: 51.5074, lon: -0.1278, country: "United Kingdom", state: "England", tz: "Europe/London" },
-      { name: "new york", lat: 40.7128, lon: -74.006, country: "United States", state: "New York", tz: "America/New_York" },
+      { name: "manchester", lat: 53.4808, lon: -2.2426, country: "United Kingdom", state: "England", tz: "Europe/London" },
+      { name: "paris", lat: 48.8566, lon: 2.3522, country: "France", state: "Île-de-France", tz: "Europe/Paris" },
+      { name: "berlin", lat: 52.52, lon: 13.405, country: "Germany", state: "Berlin", tz: "Europe/Berlin" },
       { name: "tokyo", lat: 35.6762, lon: 139.6503, country: "Japan", state: "Tokyo", tz: "Asia/Tokyo" },
       { name: "dubai", lat: 25.2048, lon: 55.2708, country: "United Arab Emirates", state: "Dubai", tz: "Asia/Dubai" },
-      { name: "paris", lat: 48.8566, lon: 2.3522, country: "France", state: "Île-de-France", tz: "Europe/Paris" },
+      { name: "abu dhabi", lat: 24.4539, lon: 54.3773, country: "United Arab Emirates", state: "Abu Dhabi", tz: "Asia/Dubai", displayName: "Abu Dhabi" },
+      { name: "singapore", lat: 1.3521, lon: 103.8198, country: "Singapore", state: "Singapore", tz: "Asia/Singapore" },
       { name: "sydney", lat: -33.8688, lon: 151.2093, country: "Australia", state: "New South Wales", tz: "Australia/Sydney" },
+      { name: "melbourne", lat: -37.8136, lon: 144.9631, country: "Australia", state: "Victoria", tz: "Australia/Melbourne" },
+      { name: "toronto", lat: 43.6532, lon: -79.3832, country: "Canada", state: "Ontario", tz: "America/Toronto" },
+      { name: "vancouver", lat: 49.2827, lon: -123.1207, country: "Canada", state: "British Columbia", tz: "America/Vancouver" },
+      { name: "bangkok", lat: 13.7563, lon: 100.5018, country: "Thailand", state: "Bangkok", tz: "Asia/Bangkok" },
+      { name: "kuala lumpur", lat: 3.139, lon: 101.6869, country: "Malaysia", state: "Kuala Lumpur", tz: "Asia/Kuala_Lumpur", displayName: "Kuala Lumpur" },
+      { name: "hong kong", lat: 22.3193, lon: 114.1694, country: "China", state: "Hong Kong", tz: "Asia/Hong_Kong", displayName: "Hong Kong" },
     ];
 
+    // Helper to sanitize candidate search text
+    const cleanLocationCandidate = (raw: string): string => {
+      let s = raw.replace(/[?,!:;'"()[\]{}]/g, " ");
+      const stopPatterns = [
+        /\b(?:tomorrow|today|tonight|yesterday|this weekend|next week|weekend|morning|afternoon|evening|night|now|currently|right now)\b/gi,
+        /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
+        /\b(?:at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|o'clock)\b/gi,
+        /\b(?:please|can|could|should|will|would|how|what|is|the|are|about|tell|me|show|give|check|forecast|weather|temperature|temp|rain|raining|rainy|humidity|wind|aqi|climate|conditions|outlook|update|report|match|play|cricket|travel|safe|drive)\b/gi,
+      ];
+      for (const pat of stopPatterns) {
+        s = s.replace(pat, " ");
+      }
+      return s.replace(/\s+/g, " ").trim();
+    };
+
+    // 1. Direct match from city lookup (longest city names first)
     for (const item of cityKeywords) {
-      if (qLower.includes(item.name)) {
+      const regex = new RegExp(`\\b${item.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      if (regex.test(qLower)) {
         return {
-          id: item.name,
-          name: item.name.charAt(0).toUpperCase() + item.name.slice(1),
+          id: `${item.name}_${item.lat}_${item.lon}`,
+          name: item.displayName || (item.name.charAt(0).toUpperCase() + item.name.slice(1)),
           admin1: item.state,
           country: item.country,
           latitude: item.lat,
           longitude: item.lon,
-          timezone: item.tz,
+          timezone: item.tz || "Asia/Kolkata",
         };
       }
     }
 
-    // Try dynamic geocoding if query specifies "in [City]" or "at [City]" or "for [City]"
-    const match = query.match(/(?:in|at|for|near)\s+([a-zA-Z\s]{3,20})/i);
-    if (match && match[1]) {
-      const extractedWord = match[1].trim();
-      const results = await WeatherService.searchLocations(extractedWord);
-      if (results.length > 0) {
+    // 2. Preposition pattern match: "in [City]", "of [City]", "for [City]", "at [City]", "near [City]", "to [City]"
+    const prepPatterns = [
+      /(?:in|of|for|at|near|around|to|about|from|towards)\s+([a-zA-Z\u0080-\uFFFF\s\.\-]{2,35})/gi,
+      /(?:weather|forecast|temperature|climate|rain|aqi|humidity)\s+(?:in|of|for|at|around)?\s*([a-zA-Z\u0080-\uFFFF\s\.\-]{2,35})/gi,
+    ];
+
+    for (const pattern of prepPatterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(qRaw)) !== null) {
+        if (match[1]) {
+          const candidate = cleanLocationCandidate(match[1]);
+          if (candidate.length >= 2) {
+            const results = await WeatherService.searchLocations(candidate);
+            if (results && results.length > 0) {
+              return results[0];
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Whole query cleaned extraction (e.g., "Vadodara weather", "Chicago 5 day forecast", "Tokyo")
+    const cleanedQuery = cleanLocationCandidate(qRaw);
+    if (cleanedQuery.length >= 2 && cleanedQuery.length <= 40) {
+      const results = await WeatherService.searchLocations(cleanedQuery);
+      if (results && results.length > 0) {
         return results[0];
       }
     }
 
+    // 4. Token-level search for individual words (e.g. "Vadodara", "Gandhinagar", "Toronto")
+    const rawTokens = qRaw.split(/\s+/).map((w) => cleanLocationCandidate(w)).filter((w) => w.length >= 3);
+    for (const token of rawTokens) {
+      const results = await WeatherService.searchLocations(token);
+      if (results && results.length > 0) {
+        return results[0];
+      }
+    }
+
+    // 5. Fallback: Use user's currently selected location on the web app (or Ahmedabad if none)
     return activeLocation || DEFAULT_LOCATION;
   }
 
