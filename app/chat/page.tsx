@@ -134,7 +134,11 @@ function ChatContent() {
     }
   };
 
-  const handleSendMessage = async (prompt: string, history: AIChatMessage[]): Promise<AIChatMessage> => {
+  const handleSendMessage = async (
+    prompt: string,
+    history: AIChatMessage[],
+    language: "auto" | "en" | "hi" | "gu" = "auto"
+  ): Promise<AIChatMessage> => {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -144,11 +148,13 @@ function ChatContent() {
           role: m.role,
           content: m.content,
           location: m.location,
+          language: m.language,
         })),
         conversationId: activeConvId,
         activeLocation: currentLocation,
         isDemoMode: true,
         unit,
+        language,
       }),
     });
 

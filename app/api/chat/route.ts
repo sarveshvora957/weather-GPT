@@ -15,18 +15,20 @@ export async function POST(req: NextRequest) {
       isDemoMode,
       userApiKey,
       unit = "C",
+      language = "auto",
     } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Missing prompt parameter." }, { status: 400 });
     }
 
-    // Process query with AI Weather Intelligence & multi-turn memory
+    // Process query with AI Weather Intelligence, multilingual engine & multi-turn memory
     const reply = await WeatherAI.processQuery(prompt, history, {
       activeLocation,
       isDemoMode,
       userApiKey,
       unit: unit === "F" ? "F" : "C",
+      language,
     });
 
     // Store in DB conversation if conversationId is provided

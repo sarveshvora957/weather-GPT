@@ -159,6 +159,7 @@ export interface AIChatMessage {
   suggestedQuestions?: string[];
   isDemo?: boolean;
   comparisonData?: ComparisonData;
+  language?: "en" | "hi" | "gu";
 }
 
 export interface ComparisonData {
