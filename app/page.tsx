@@ -1,89 +1,71 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Navbar } from "@/components/navbar";
-import { WeatherBackground } from "@/components/weather-background";
-import { LocationSearchBar } from "@/components/location-search-bar";
-import { WeatherCard } from "@/components/weather-card";
-import { HourlyForecast } from "@/components/hourly-forecast";
-import { SunriseSunsetCard } from "@/components/sunrise-sunset-card";
-import { RainfallCard } from "@/components/rainfall-card";
-import { WeatherDetailsGrid } from "@/components/weather-details-grid";
-import { WeatherCharts } from "@/components/weather-charts";
-import { WeatherAlertsSection } from "@/components/weather-alerts-section";
-import { DailyForecast } from "@/components/daily-forecast";
-import { AskAIPanel } from "@/components/ask-ai-panel";
-import { AirQualityCard } from "@/components/air-quality-card";
-import { ActivityAdvisor } from "@/components/activity-advisor";
-import { LocationSearch } from "@/components/location-search";
-import {
-  WeatherCardSkeleton,
-  HourlySkeleton,
-  ChartSkeleton,
-} from "@/components/skeleton-loader";
+import React, { useState, useEffect } from "react";
+import { useWeatherSettings } from "@/components/weather-context";
+import { WeatherService, POPULAR_LOCATIONS } from "@/lib/weather-service";
 import {
   CurrentWeather,
   HourlyForecastItem,
   DailyForecastItem,
-  AirQuality,
-  WeatherAlert,
+  LocationData,
 } from "@/types/weather";
-import { WeatherService } from "@/lib/weather-service";
-import { useWeatherSettings } from "@/components/weather-context";
+import { WeatherTodayView } from "@/components/weather-today-view";
+import { WeatherWeekView } from "@/components/weather-week-view";
+import { WeatherSavedView } from "@/components/weather-saved-view";
+import { WeatherAIView } from "@/components/weather-ai-view";
+import { BottomNavBar, WeatherTab } from "@/components/bottom-nav-bar";
+import { LocationSearch } from "@/components/location-search";
 import {
-  RefreshCw,
-  Bot,
-  MapPin,
-  Clock,
+  Smartphone,
+  Layers,
+  Search,
   Sparkles,
+  MapPin,
+  RefreshCw,
   ExternalLink,
-  ShieldCheck,
-  CheckCircle2,
-  Compass,
 } from "lucide-react";
 
-export default function WeatherGPTDashboard() {
-  const router = useRouter();
+export default function WeatherGPTApp() {
   const { unit, toggleUnit, currentLocation, setCurrentLocation } = useWeatherSettings();
 
   const [currentWeather, setCurrentWeather] = useState<CurrentWeather | null>(null);
   const [hourly, setHourly] = useState<HourlyForecastItem[]>([]);
   const [daily, setDaily] = useState<DailyForecastItem[]>([]);
-  const [aqi, setAqi] = useState<AirQuality | null>(null);
-  const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [lastRefreshed, setLastRefreshed] = useState<string>("");
 
-  // Fetch weather when currentLocation changes
+  // Tab state for Single Phone mode and individual phone mockups
+  const [activeTab, setActiveTab] = useState<WeatherTab>("today");
+  const [phone1Tab, setPhone1Tab] = useState<WeatherTab>("today");
+  const [phone2Tab, setPhone2Tab] = useState<WeatherTab>("week");
+  const [phone3Tab, setPhone3Tab] = useState<WeatherTab>("saved");
+
+  // View mode on desktop: "showcase" (3 phones side-by-side) or "single" (focused phone)
+  const [viewMode, setViewMode] = useState<"showcase" | "single">("showcase");
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+
+  // Saved locations state
+  const [savedLocations, setSavedLocations] = useState<LocationData[]>([]);
+  const [weatherMap, setWeatherMap] = useState<Record<string, CurrentWeather>>({});
+
+  // Fetch live weather data when currentLocation changes
   useEffect(() => {
     let isCancelled = false;
 
     async function loadWeatherData() {
       setLoading(true);
       try {
-        const [full, aqiData, alertsData] = await Promise.all([
-          WeatherService.getFullWeather(currentLocation.latitude, currentLocation.longitude),
-          WeatherService.getAirQuality(currentLocation.latitude, currentLocation.longitude),
-          WeatherService.getWeatherAlerts(
-            currentLocation.latitude,
-            currentLocation.longitude,
-            currentLocation.name
-          ),
-        ]);
+        const full = await WeatherService.getFullWeather(
+          currentLocation.latitude,
+          currentLocation.longitude
+        );
 
         if (!isCancelled) {
           setCurrentWeather(full.current);
           setHourly(full.hourly);
           setDaily(full.daily);
-          setAqi(aqiData);
-          setAlerts(alertsData);
-          setLastRefreshed(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
         }
       } catch (err) {
-        console.error("Dashboard weather fetch error:", err);
+        console.error("Failed to load weather data:", err);
       } finally {
         if (!isCancelled) {
           setLoading(false);
@@ -98,241 +80,233 @@ export default function WeatherGPTDashboard() {
     };
   }, [currentLocation]);
 
-  const currentConditionText = currentWeather?.conditionText || "clear";
-  const isNightTime = currentWeather ? !currentWeather.isDay : false;
+  // Load saved locations and their current weather
+  useEffect(() => {
+    async function loadSaved() {
+      try {
+        const res = await fetch("/api/saved-locations");
+        if (res.ok) {
+          const list: LocationData[] = await res.json();
+          setSavedLocations(list);
 
-  const scrollToAI = () => {
-    const aiPanel = document.getElementById("ask-ai-section");
-    if (aiPanel) {
-      aiPanel.scrollIntoView({ behavior: "smooth" });
-    } else {
-      router.push(`/chat?location=${encodeURIComponent(currentLocation.name)}`);
+          const map: Record<string, CurrentWeather> = {};
+          await Promise.all(
+            list.slice(0, 6).map(async (l) => {
+              try {
+                const full = await WeatherService.getFullWeather(l.latitude, l.longitude);
+                map[l.name] = full.current;
+              } catch (e) {}
+            })
+          );
+          setWeatherMap(map);
+        }
+      } catch (e) {
+        console.warn("Could not load saved locations:", e);
+      }
+    }
+    loadSaved();
+  }, []);
+
+  const handleSelectLocation = (loc: LocationData) => {
+    setCurrentLocation(loc);
+    setSearchModalOpen(false);
+    setActiveTab("today");
+    setPhone1Tab("today");
+    setPhone2Tab("week");
+  };
+
+  // Render view for a specific tab inside a phone container
+  const renderTabContent = (
+    tab: WeatherTab,
+    onChangeTab: (t: WeatherTab) => void
+  ) => {
+    if (loading || !currentWeather) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center text-blue-200">
+          <div className="w-9 h-9 border-3 border-sky-400 border-t-transparent rounded-full animate-spin mb-4" />
+          <span className="text-sm font-medium">Fetching meteorological telemetry...</span>
+          <span className="text-xs text-blue-300/60 mt-1 font-mono">Open-Meteo API</span>
+        </div>
+      );
+    }
+
+    switch (tab) {
+      case "today":
+        return (
+          <WeatherTodayView
+            location={currentLocation}
+            current={currentWeather}
+            todayDaily={daily[0]}
+            hourly={hourly}
+            unit={unit}
+            onToggleUnit={toggleUnit}
+            onOpenSearch={() => setSearchModalOpen(true)}
+          />
+        );
+      case "week":
+        return (
+          <WeatherWeekView
+            location={currentLocation}
+            daily={daily}
+            unit={unit}
+            onToggleUnit={toggleUnit}
+            onOpenSearch={() => setSearchModalOpen(true)}
+          />
+        );
+      case "saved":
+        return (
+          <WeatherSavedView
+            savedLocations={savedLocations}
+            weatherMap={weatherMap}
+            unit={unit}
+            onSelectLocation={handleSelectLocation}
+            onBack={() => onChangeTab("today")}
+            onOpenSearch={() => setSearchModalOpen(true)}
+          />
+        );
+      case "ai":
+        return (
+          <WeatherAIView
+            location={currentLocation}
+            current={currentWeather}
+            unit={unit}
+            onBack={() => onChangeTab("today")}
+          />
+        );
+      default:
+        return null;
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-x-hidden text-slate-100">
-      {/* 1. Dynamic Weather Background (reacts to conditions & day/night) */}
-      <WeatherBackground condition={currentConditionText} isNight={isNightTime} />
-
-      {/* 2. Top Navigation Bar with °C/°F Toggle, Direct Links, & Quick Cities */}
-      <Navbar
-        currentLocation={currentLocation}
-        onLocationChange={setCurrentLocation}
-        onOpenSearch={() => setSearchModalOpen(true)}
-      />
-
-      {/* Main Content Area: Centered, Clean Modern Weather App Layout */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-6 sm:space-y-8">
-        {/* Prominent Location Search & Quick Shortcuts */}
-        <div className="w-full">
-          <LocationSearchBar
-            currentLocation={currentLocation}
-            onSelectLocation={setCurrentLocation}
-            isLoading={loading}
-          />
-        </div>
-
-        {/* Live Telemetry & Quick Action Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-          <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-300">
-            <span className="flex items-center gap-1.5 font-semibold text-white">
-              <MapPin className="w-4 h-4 text-aurora-cyan" />
-              <span>
-                {currentLocation.name}
-                {currentLocation.admin2 ? `, ${currentLocation.admin2}` : ""}
-                {currentLocation.admin1 ? `, ${currentLocation.admin1}` : ""}
+    <div className="min-h-screen canvas-backdrop flex flex-col items-center justify-between text-white selection:bg-sky-500 selection:text-white">
+      {/* 1. Desktop Top Control Bar (Clean & Unobtrusive) */}
+      <header className="w-full max-w-6xl px-4 pt-4 pb-2 flex flex-wrap items-center justify-between gap-3 z-20">
+        {/* Brand */}
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-xl bg-sky-500 flex items-center justify-center text-navy-950 font-black text-xs shadow-md">
+            W
+          </div>
+          <div>
+            <h1 className="text-sm sm:text-base font-bold text-navy-950 tracking-tight flex items-center gap-1.5">
+              <span>WeatherGPT</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white/60 text-navy-900 border border-navy-900/10">
+                Live
               </span>
-            </span>
-            <span className="text-slate-500">•</span>
-            <span className="text-slate-400 font-mono text-[11px] flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {lastRefreshed ? `Updated ${lastRefreshed}` : "Live Data"}
-            </span>
-            <span className="hidden sm:inline text-slate-500">•</span>
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-brand-300 font-mono">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-              Open-Meteo Verified
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentLocation({ ...currentLocation })}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 hover:text-white transition-all active:scale-95"
-              title="Refresh Live Weather Observations"
-              aria-label="Refresh weather data"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-aurora-cyan" : ""}`} />
-              <span className="font-mono text-[11px]">Refresh</span>
-            </button>
-
-            <button
-              onClick={scrollToAI}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-brand-600 via-aurora-cyan to-brand-400 text-navy-950 font-bold text-xs shadow-neon-cyan hover:brightness-110 active:scale-95 transition-all"
-            >
-              <Bot className="w-3.5 h-3.5 fill-navy-950" />
-              <span>Ask AI</span>
-            </button>
+            </h1>
           </div>
         </div>
 
-        {/* 3. Hero Current Weather Card */}
-        <section aria-label="Current Weather">
-          {loading || !currentWeather ? (
-            <WeatherCardSkeleton />
-          ) : (
-            <WeatherCard
-              current={currentWeather}
-              location={currentLocation}
-              todayDaily={daily[0]}
-              unit={unit}
-              onToggleUnit={toggleUnit}
-              onAskAI={scrollToAI}
-            />
-          )}
-        </section>
+        {/* Center: Active Location Indicator */}
+        <button
+          onClick={() => setSearchModalOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/70 hover:bg-white/90 text-navy-900 text-xs font-semibold shadow-sm transition-all border border-navy-900/10"
+        >
+          <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+          <span>
+            {currentLocation.name}
+            {currentLocation.admin1 ? `, ${currentLocation.admin1}` : ""}
+          </span>
+          <Search className="w-3 h-3 text-slate-500 ml-1" />
+        </button>
 
-        {/* 4. 24-Hour Scrollable Hourly Forecast Strip */}
-        <section aria-label="Hourly Forecast">
-          {loading ? (
-            <HourlySkeleton />
-          ) : (
-            <HourlyForecast items={hourly} unit={unit} />
-          )}
-        </section>
+        {/* Right Controls: Mode Toggle, °C/°F, Refresh */}
+        <div className="flex items-center gap-2">
+          {/* Toggle between 3-Phone Showcase & Single Phone on Desktop */}
+          <div className="hidden lg:flex items-center p-0.5 rounded-full bg-navy-950/15 border border-navy-950/10 text-xs font-medium">
+            <button
+              onClick={() => setViewMode("showcase")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full transition-all ${
+                viewMode === "showcase"
+                  ? "bg-white text-navy-950 shadow-sm font-bold"
+                  : "text-navy-900/80 hover:text-navy-950"
+              }`}
+            >
+              <Layers className="w-3 h-3" />
+              <span>3-Screen Showcase</span>
+            </button>
 
-        {/* 5. Main Weather Grid: 7-Day Extended Forecast + Detailed Metrics */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Column: 7-Day Forecast & Solar/Rain Cards */}
-          <div className="lg:col-span-6 space-y-6">
-            <section aria-label="7-Day Extended Forecast">
-              {loading ? (
-                <HourlySkeleton />
-              ) : (
-                <DailyForecast items={daily.slice(0, 7)} unit={unit} />
-              )}
-            </section>
+            <button
+              onClick={() => setViewMode("single")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full transition-all ${
+                viewMode === "single"
+                  ? "bg-white text-navy-950 shadow-sm font-bold"
+                  : "text-navy-900/80 hover:text-navy-950"
+              }`}
+            >
+              <Smartphone className="w-3 h-3" />
+              <span>Single Phone</span>
+            </button>
+          </div>
 
-            {/* Sunrise / Sunset & Precipitation Probability */}
-            {currentWeather && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <SunriseSunsetCard
-                  sunrise={currentWeather.sunrise}
-                  sunset={currentWeather.sunset}
-                  isDay={currentWeather.isDay}
-                />
-                <RainfallCard
-                  precipitationProb={
-                    daily[0]?.precipitationProb ||
-                    (currentWeather.precipitation > 0 ? 80 : 10)
-                  }
-                  precipitationSum={
-                    daily[0]?.precipitationSum || currentWeather.precipitation
-                  }
-                  currentPrecipitation={currentWeather.precipitation}
-                  hourlyItems={hourly}
-                />
+          {/* Unit Switcher */}
+          <button
+            onClick={toggleUnit}
+            className="px-3 py-1.5 rounded-full bg-white/70 hover:bg-white/90 text-navy-950 font-bold text-xs shadow-sm border border-navy-900/10 transition-colors"
+          >
+            °{unit}
+          </button>
+        </div>
+      </header>
+
+      {/* 2. Main Visual Canvas */}
+      <main className="w-full flex-1 flex items-center justify-center p-2 sm:p-6 lg:p-8">
+        {/* VIEW 1: DESKTOP 3-SCREEN SHOWCASE (Matches user's reference image 100%) */}
+        {viewMode === "showcase" ? (
+          <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-8 xl:gap-10 py-4">
+            {/* Phone 1: Screen 1 (Today / Current Weather & Hourly) */}
+            <div className="phone-viewport w-[340px] sm:w-[360px] h-[680px] sm:h-[720px] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-300 hover:shadow-[0_30px_70px_-10px_rgba(6,17,39,0.8)]">
+              <div className="flex-1 overflow-hidden">
+                {renderTabContent(phone1Tab, setPhone1Tab)}
               </div>
-            )}
+              <BottomNavBar activeTab={phone1Tab} onChangeTab={setPhone1Tab} />
+            </div>
+
+            {/* Phone 2: Screen 2 (This Week / 7-Day Forecast & Tomorrow Highlight) */}
+            <div className="phone-viewport w-[340px] sm:w-[360px] h-[680px] sm:h-[720px] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-300 hover:shadow-[0_30px_70px_-10px_rgba(6,17,39,0.8)]">
+              <div className="flex-1 overflow-hidden">
+                {renderTabContent(phone2Tab, setPhone2Tab)}
+              </div>
+              <BottomNavBar activeTab={phone2Tab} onChangeTab={setPhone2Tab} />
+            </div>
+
+            {/* Phone 3: Screen 3 (Saved Locations / Watchlist Cards) */}
+            <div className="phone-viewport w-[340px] sm:w-[360px] h-[680px] sm:h-[720px] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-300 hover:shadow-[0_30px_70px_-10px_rgba(6,17,39,0.8)]">
+              <div className="flex-1 overflow-hidden">
+                {renderTabContent(phone3Tab, setPhone3Tab)}
+              </div>
+              <BottomNavBar activeTab={phone3Tab} onChangeTab={setPhone3Tab} />
+            </div>
           </div>
-
-          {/* Right Column: Weather Details Grid & Air Quality Card */}
-          <div className="lg:col-span-6 space-y-6">
-            <section aria-label="Current Weather Conditions Grid">
-              {currentWeather && (
-                <WeatherDetailsGrid
-                  current={currentWeather}
-                  todayDaily={daily[0]}
-                  unit={unit}
-                />
-              )}
-            </section>
-
-            {aqi && (
-              <section aria-label="Air Quality Index">
-                <AirQualityCard aqi={aqi} />
-              </section>
-            )}
+        ) : (
+          /* VIEW 2: SINGLE FOCUSED PHONE (Interactive 4-tab mobile view) */
+          <div className="phone-viewport w-full max-w-[370px] sm:max-w-[390px] h-[100dvh] sm:h-[740px] flex flex-col justify-between overflow-hidden shadow-2xl">
+            <div className="flex-1 overflow-hidden">
+              {renderTabContent(activeTab, setActiveTab)}
+            </div>
+            <BottomNavBar activeTab={activeTab} onChangeTab={setActiveTab} />
           </div>
-        </div>
-
-        {/* 6. Interactive 24-Hour Trend Charts */}
-        <section aria-label="Interactive Temperature and Weather Charts">
-          {loading ? <ChartSkeleton /> : <WeatherCharts hourly={hourly} unit={unit} />}
-        </section>
-
-        {/* 7. Real-Time Meteorological Alerts Section */}
-        <section aria-label="Weather Alerts">
-          <WeatherAlertsSection alerts={alerts} location={currentLocation} />
-        </section>
-
-        {/* 8. Activity Advisor */}
-        {currentWeather && aqi && (
-          <section aria-label="Daily Activity & Lifestyle Advisor">
-            <ActivityAdvisor
-              current={currentWeather}
-              daily={daily}
-              aqi={aqi}
-              location={currentLocation}
-              onAskChat={(prompt) => router.push(`/chat?q=${encodeURIComponent(prompt)}`)}
-            />
-          </section>
         )}
-
-        {/* 9. Dedicated Sleek "Ask WeatherGPT" AI Panel */}
-        <section id="ask-ai-section" className="scroll-mt-6" aria-label="WeatherGPT AI Assistant">
-          {currentWeather && (
-            <AskAIPanel
-              currentLocation={currentLocation}
-              currentWeather={currentWeather}
-              hourly={hourly}
-              daily={daily}
-              aqi={aqi}
-              unit={unit}
-            />
-          )}
-        </section>
       </main>
 
-      {/* Global Location Search Modal */}
+      {/* 3. Global Location Search Modal */}
       <LocationSearch
         isOpen={searchModalOpen}
         onClose={() => setSearchModalOpen(false)}
-        onSelectLocation={setCurrentLocation}
+        onSelectLocation={handleSelectLocation}
       />
 
-      {/* Consumer Weather App Footer */}
-      <footer className="border-t border-white/10 glass-panel py-8 px-6 text-xs text-slate-400 mt-12">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="text-center md:text-left space-y-1">
-            <p className="text-slate-300 font-medium">
-              WeatherGPT • Intelligent Meteorological Forecasting
-            </p>
-            <p className="text-slate-500 text-[11px]">
-              Live weather telemetry provided by{" "}
-              <a
-                href="https://open-meteo.com/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-aurora-cyan hover:underline inline-flex items-center gap-0.5"
-              >
-                Open-Meteo <ExternalLink className="w-2.5 h-2.5" />
-              </a>{" "}
-              • Free & Open Data API.
-            </p>
-          </div>
-
-          <nav className="flex flex-wrap items-center justify-center gap-4 text-slate-400">
-            <Link href="/" className="hover:text-white transition-colors">Weather</Link>
-            <Link href="/chat" className="hover:text-white transition-colors">AI Weather Chat</Link>
-            <Link href="/forecast" className="hover:text-white transition-colors">Extended Forecast</Link>
-            <Link href="/map" className="hover:text-white transition-colors">Radar Map</Link>
-            <Link href="/climate" className="hover:text-white transition-colors">Climate</Link>
-            <Link href="/compare" className="hover:text-white transition-colors">Compare</Link>
-            <Link href="/alerts" className="hover:text-white transition-colors">Alerts</Link>
-          </nav>
-        </div>
+      {/* 4. Subtle Footer Attribution */}
+      <footer className="w-full py-4 text-center text-[11px] text-navy-950/70 font-medium">
+        <span>WeatherGPT • Meteorological data powered by </span>
+        <a
+          href="https://open-meteo.com/"
+          target="_blank"
+          rel="noreferrer"
+          className="font-bold underline hover:text-navy-950 inline-flex items-center gap-0.5"
+        >
+          Open-Meteo <ExternalLink className="w-2.5 h-2.5" />
+        </a>
       </footer>
     </div>
   );
