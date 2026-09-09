@@ -7,14 +7,22 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { prompt, conversationId, activeLocation, isDemoMode, userApiKey, unit = "C" } = body;
+    const {
+      prompt,
+      history = [],
+      conversationId,
+      activeLocation,
+      isDemoMode,
+      userApiKey,
+      unit = "C",
+    } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Missing prompt parameter." }, { status: 400 });
     }
 
-    // Process query with AI Weather Intelligence
-    const reply = await WeatherAI.processQuery(prompt, [], {
+    // Process query with AI Weather Intelligence & multi-turn memory
+    const reply = await WeatherAI.processQuery(prompt, history, {
       activeLocation,
       isDemoMode,
       userApiKey,

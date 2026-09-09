@@ -4,68 +4,79 @@ import React, { useState, useEffect, useRef } from "react";
 import { AIChatMessage, LocationData, ComparisonData } from "@/types/weather";
 import {
   Send,
+  ArrowUp,
   Mic,
   MicOff,
   Volume2,
   VolumeX,
-  Sparkles,
-  RefreshCw,
   Copy,
   Check,
   MapPin,
   Droplets,
   Wind,
   Sun,
-  ShieldAlert,
-  ArrowRight,
   Bot,
   User,
   Navigation,
   GitCompare,
-  Compass,
-  Gauge,
-  Eye,
-  Calendar,
+  Plus,
+  History,
+  Sparkles,
+  RefreshCw,
+  Clock,
+  ExternalLink,
 } from "lucide-react";
-import { formatTemp, convertTemp } from "@/lib/utils";
+import { convertTemp, formatTemp } from "@/lib/utils";
 import { Weather3DIcon } from "@/components/weather-3d-icon";
+import Link from "next/link";
 
 interface ChatBoxProps {
   initialMessages?: AIChatMessage[];
   currentLocation: LocationData;
-  onSendMessage: (text: string) => Promise<AIChatMessage>;
+  onSendMessage: (text: string, history: AIChatMessage[]) => Promise<AIChatMessage>;
+  onNewChat?: () => void;
+  onToggleHistory?: () => void;
+  onSelectLocation?: (loc: LocationData) => void;
   isDemoMode?: boolean;
   unit?: "C" | "F";
+  onToggleUnit?: () => void;
 }
 
 export const ChatBox: React.FC<ChatBoxProps> = ({
   initialMessages = [],
   currentLocation,
   onSendMessage,
+  onNewChat,
+  onToggleHistory,
+  onSelectLocation,
   isDemoMode = false,
   unit = "C",
+  onToggleUnit,
 }) => {
   const [messages, setMessages] = useState<AIChatMessage[]>(initialMessages);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState<string>("Finding location...");
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [streamedText, setStreamedText] = useState<string>("");
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const recognitionRef = useRef<any>(null);
+  const streamIntervalRef = useRef<any>(null);
 
   // Sync initialMessages when passed
   useEffect(() => {
-    if (initialMessages && initialMessages.length > 0) {
-      setMessages(initialMessages);
-    }
+    setMessages(initialMessages || []);
   }, [initialMessages]);
 
-  // Auto-scroll to bottom of chat
+  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, streamedText]);
 
   // Setup Web Speech Recognition
   useEffect(() => {
@@ -82,24 +93,30 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
           const transcript = event.results[0][0].transcript;
           setInputText(transcript);
           setIsListening(false);
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
         };
 
-        recognition.onerror = () => {
-          setIsListening(false);
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-        };
+        recognition.onerror = () => setIsListening(false);
+        recognition.onend = () => setIsListening(false);
 
         recognitionRef.current = recognition;
       }
     }
   }, []);
 
+  // Textarea auto-resize
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+    }
+  }, [inputText]);
+
   const toggleVoiceInput = () => {
     if (!recognitionRef.current) {
-      alert("Speech recognition is not supported in this browser. Try Chrome or Edge!");
+      alert("Voice input is not supported in this browser. Please try Google Chrome or Microsoft Edge.");
       return;
     }
 
@@ -140,46 +157,6 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
     setIsSpeaking(true);
   };
 
-  const handleSubmitWithText = async (text: string) => {
-    if (!text.trim() || isLoading) return;
-
-    const userPrompt = text.trim();
-    setInputText("");
-
-    const userMsg: AIChatMessage = {
-      id: `msg-user-${Date.now()}`,
-      role: "user",
-      content: userPrompt,
-      timestamp: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setIsLoading(true);
-
-    try {
-      const assistantReply = await onSendMessage(userPrompt);
-      setMessages((prev) => [...prev, assistantReply]);
-    } catch (err) {
-      console.error("Chat error:", err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `msg-err-${Date.now()}`,
-          role: "assistant",
-          content: "Weather data is temporarily unavailable. Please verify connection and try again.",
-          timestamp: new Date().toISOString(),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    handleSubmitWithText(inputText);
-  };
-
   const handleUseMyLocation = () => {
     if (typeof window === "undefined" || !navigator.geolocation) {
       alert("Geolocation is not supported by your browser.");
@@ -187,18 +164,28 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
     }
 
     setIsLoading(true);
+    setLoadingPhase("Detecting GPS coordinates...");
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          // Reverse geocode via BigDataCloud (free, CORS-friendly)
+          setLoadingPhase("Resolving locality...");
           const res = await fetch(
             `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
           );
           const data = await res.json();
           const cityName = data.city || data.locality || data.principalSubdivision || "my location";
-          const prompt = `What is the current weather and forecast in ${cityName}?`;
-          handleSubmitWithText(prompt);
+          if (onSelectLocation && data.latitude && data.longitude) {
+            onSelectLocation({
+              name: cityName,
+              latitude,
+              longitude,
+              country: data.countryName || "India",
+              admin1: data.principalSubdivision,
+            });
+          }
+          handleSubmitWithText(`What is the weather in ${cityName}?`);
         } catch (e) {
           console.warn("GPS reverse geocode error:", e);
           handleSubmitWithText("What is the weather near my current location?");
@@ -207,10 +194,91 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
       (err) => {
         console.warn("Geolocation error:", err);
         setIsLoading(false);
-        alert("Unable to access current location. Please allow location permissions in your browser.");
+        alert("Unable to access current location. Please ensure location permissions are enabled.");
       },
       { timeout: 8000 }
     );
+  };
+
+  const handleSubmitWithText = async (text: string) => {
+    if (!text.trim() || isLoading) return;
+
+    const userPrompt = text.trim();
+    setInputText("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+
+    const userMsg: AIChatMessage = {
+      id: `msg-user-${Date.now()}`,
+      role: "user",
+      content: userPrompt,
+      timestamp: new Date().toISOString(),
+    };
+
+    const nextHistory = [...messages, userMsg];
+    setMessages(nextHistory);
+    setIsLoading(true);
+
+    // Dynamic phase transitions for thinking feel
+    setLoadingPhase("📍 Finding location...");
+    const phaseTimer1 = setTimeout(() => setLoadingPhase("🌦️ Fetching verified weather data..."), 500);
+    const phaseTimer2 = setTimeout(() => setLoadingPhase("🤖 Preparing natural answer..."), 1200);
+
+    try {
+      const assistantReply = await onSendMessage(userPrompt, nextHistory);
+      clearTimeout(phaseTimer1);
+      clearTimeout(phaseTimer2);
+
+      // Progressive streaming / typing effect for reply text
+      const fullText = assistantReply.content || "";
+      const msgId = assistantReply.id;
+      setStreamingMessageId(msgId);
+      setStreamedText("");
+
+      // Add assistant placeholder to messages
+      setMessages((prev) => [...prev, { ...assistantReply, content: "" }]);
+      setIsLoading(false);
+
+      let currentIdx = 0;
+      const step = Math.max(2, Math.floor(fullText.length / 30));
+      clearInterval(streamIntervalRef.current);
+
+      streamIntervalRef.current = setInterval(() => {
+        currentIdx += step;
+        if (currentIdx >= fullText.length) {
+          clearInterval(streamIntervalRef.current);
+          setStreamedText(fullText);
+          setStreamingMessageId(null);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msgId ? { ...m, content: fullText } : m))
+          );
+        } else {
+          setStreamedText(fullText.slice(0, currentIdx));
+        }
+      }, 16);
+    } catch (err) {
+      clearTimeout(phaseTimer1);
+      clearTimeout(phaseTimer2);
+      setIsLoading(false);
+      console.error("Chat error:", err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-err-${Date.now()}`,
+          role: "assistant",
+          content: "I couldn't retrieve current weather data right now. Please check your connection and try again.",
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmitWithText(inputText);
+    }
   };
 
   const handleCopy = (id: string, text: string) => {
@@ -219,347 +287,349 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const suggestionPills = [
-    "Weather in Ahmedabad",
-    "Will it rain in Rajkot today?",
-    "What is the temperature in Jetpur?",
-    "Should I carry an umbrella?",
-    "What's the weather tomorrow in Jetpur?",
-    "What will be the weather around 6 PM?",
-    "Is UV index dangerous right now?",
-    "7-day weather forecast for Ahmedabad",
-    "Which is better for travelling today, Ahmedabad or Surat?",
-    "Weather near me",
+  const suggestionCards = [
+    { label: "Will it rain today?", icon: "🌧️", prompt: `Will it rain today in ${currentLocation.name}?` },
+    { label: `Weather in ${currentLocation.name}`, icon: "🌡️", prompt: `What's the weather in ${currentLocation.name}?` },
+    { label: "Weather near me", icon: "🗺️", action: handleUseMyLocation },
+    { label: "Is today good for outdoor activities?", icon: "☀️", prompt: `Is it good for outdoor activities today in ${currentLocation.name}?` },
+    { label: "Show me the 7-day forecast", icon: "📅", prompt: `7-day weather forecast for ${currentLocation.name}` },
+    { label: "Is the weather suitable for travel?", icon: "✈️", prompt: `Is the weather suitable for travel in ${currentLocation.name}?` },
   ];
 
   return (
-    <div className="flex flex-col h-[700px] w-full rounded-3xl glass-panel border border-white/10 shadow-2xl overflow-hidden bg-navy-950/40">
-      {/* Top Chat Header */}
-      <div className="p-4 border-b border-white/10 flex items-center justify-between bg-navy-950/60 backdrop-blur-xl">
+    <div className="flex flex-col h-full w-full bg-navy-950/40 rounded-3xl border border-white/10 shadow-2xl overflow-hidden relative">
+      {/* 1. Top Bar: Clean, modern header */}
+      <header className="h-14 px-4 sm:px-6 border-b border-white/10 flex items-center justify-between bg-navy-950/70 backdrop-blur-xl shrink-0 z-10">
         <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 via-brand-500 to-aurora-cyan p-[1px] shadow-neon-cyan">
-            <div className="w-full h-full rounded-2xl bg-navy-950 flex items-center justify-center">
-              <Bot className="w-5 h-5 text-aurora-cyan animate-pulse" />
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm sm:text-base font-black text-white tracking-tight">AI Weather Agent</h2>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Zero-Hallucination
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Live numerical atmospheric models, meteorological reasoning & verified observations
-            </p>
-          </div>
-        </div>
+          {/* History drawer toggle on mobile */}
+          {onToggleHistory && (
+            <button
+              onClick={onToggleHistory}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 md:hidden transition-colors"
+              title="Chat History"
+              aria-label="Toggle history"
+            >
+              <History className="w-4 h-4" />
+            </button>
+          )}
 
-        <div className="flex items-center gap-2">
-          {/* GPS Location Button */}
-          <button
-            onClick={handleUseMyLocation}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-sky-300 hover:text-white border border-white/10 transition-colors text-xs font-medium"
-            title="Use my current GPS location"
-            aria-label="Use my GPS location"
-          >
-            <Navigation className="w-3.5 h-3.5 text-sky-400" />
-            <span className="hidden sm:inline">Near Me</span>
-          </button>
-
-          {/* Audio Mute/Play button */}
-          <button
-            onClick={() => handleSpeakText(messages[messages.length - 1]?.content || "")}
-            className={`p-2 rounded-xl text-xs font-medium border transition-colors ${
-              isSpeaking
-                ? "bg-aurora-cyan/20 text-aurora-cyan border-aurora-cyan/40 animate-pulse"
-                : "bg-white/5 hover:bg-white/10 text-slate-300 border-white/10"
-            }`}
-            title="Read latest response aloud"
-            aria-label="Text to speech"
-          >
-            {isSpeaking ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-
-          {/* Clear Chat */}
-          <button
-            onClick={() => setMessages([])}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors"
-            title="Clear Chat"
-            aria-label="Clear chat"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Messages Stream Container */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scrollbar-thin">
-        {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center max-w-xl mx-auto space-y-4">
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-brand-600 via-aurora-cyan to-brand-400 p-[1px] shadow-neon-cyan flex items-center justify-center">
-              <div className="w-full h-full rounded-3xl bg-navy-950 flex items-center justify-center">
-                <Bot className="w-8 h-8 text-aurora-cyan" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-aurora-cyan p-[1px] shadow-sm flex items-center justify-center">
+              <div className="w-full h-full rounded-xl bg-navy-950 flex items-center justify-center">
+                <Bot className="w-4 h-4 text-aurora-cyan" />
               </div>
             </div>
             <div>
-              <h3 className="text-xl font-black text-white tracking-tight">AI Weather Agent</h3>
-              <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-                Ask natural questions in any language. The agent checks real atmospheric observations across India before answering.
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-bold text-white tracking-tight">WeatherGPT</h1>
+                <span className="text-[10px] text-aurora-cyan font-mono px-1.5 py-0.2 rounded bg-aurora-cyan/10 border border-aurora-cyan/20">
+                  AI Agent
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 hidden sm:block">
+                Zero-hallucination real-time meteorological intelligence
               </p>
             </div>
+          </div>
+        </div>
 
-            {/* Quick Suggested Prompts */}
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 text-left">
-              {suggestionPills.map((pill, i) => (
+        {/* Right Header Actions */}
+        <div className="flex items-center gap-2">
+          {/* Active location indicator */}
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-200"
+            title={`Active Context: ${currentLocation.name}`}
+          >
+            <MapPin className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span className="max-w-[90px] sm:max-w-[130px] truncate font-medium">
+              {currentLocation.name}
+            </span>
+          </div>
+
+          {/* Near Me GPS Button */}
+          <button
+            onClick={handleUseMyLocation}
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-sky-300 hover:text-white border border-white/10 transition-colors"
+            title="Use current GPS location"
+            aria-label="Use GPS"
+          >
+            <Navigation className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Unit Toggle °C / °F */}
+          {onToggleUnit && (
+            <button
+              onClick={onToggleUnit}
+              className="px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono font-bold text-aurora-cyan transition-colors"
+              title={`Switch unit (current: °${unit})`}
+              aria-label="Toggle temperature unit"
+            >
+              °{unit}
+            </button>
+          )}
+
+          {/* New Chat Button */}
+          <button
+            onClick={() => {
+              if (onNewChat) onNewChat();
+              setMessages([]);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-brand-500 hover:brightness-110 text-white text-xs font-bold shadow-sm transition-all"
+            title="Start fresh conversation"
+            aria-label="New chat"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">New Chat</span>
+          </button>
+        </div>
+      </header>
+
+      {/* 2. Messages Conversation Area */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scrollbar-thin">
+        {messages.length === 0 ? (
+          /* Welcome / Empty State */
+          <div className="h-full min-h-[420px] flex flex-col items-center justify-center text-center max-w-2xl mx-auto px-4 py-8 animate-in fade-in">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500 to-aurora-cyan p-[1px] shadow-neon-cyan flex items-center justify-center mb-4">
+              <div className="w-full h-full rounded-2xl bg-navy-950 flex items-center justify-center">
+                <Sparkles className="w-7 h-7 text-aurora-cyan" />
+              </div>
+            </div>
+
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              How can I help with the weather?
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 mt-2 max-w-md leading-relaxed">
+              Ask about rainfall risks, hourly temperatures, outdoor playability, or compare cities across India with zero hallucination.
+            </p>
+
+            {/* 6 Clean Clickable Suggested Prompts */}
+            <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-6 text-left">
+              {suggestionCards.map((card, idx) => (
                 <button
-                  key={i}
+                  key={idx}
                   onClick={() => {
-                    if (pill === "Weather near me") {
-                      handleUseMyLocation();
-                    } else {
-                      handleSubmitWithText(pill);
+                    if (card.action) {
+                      card.action();
+                    } else if (card.prompt) {
+                      handleSubmitWithText(card.prompt);
                     }
                   }}
-                  className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-200 hover:text-aurora-cyan transition-all flex items-center justify-between group"
+                  className="p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-aurora-cyan/30 text-xs text-slate-200 hover:text-white transition-all flex items-center justify-between group shadow-sm"
                 >
-                  <span className="truncate">{pill}</span>
-                  <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-aurora-cyan shrink-0 ml-2" />
+                  <div className="flex items-center gap-2.5 truncate">
+                    <span className="text-base">{card.icon}</span>
+                    <span className="truncate font-medium">{card.label}</span>
+                  </div>
+                  <ArrowUp className="w-3.5 h-3.5 rotate-45 text-slate-400 group-hover:text-aurora-cyan shrink-0 transition-colors" />
                 </button>
               ))}
             </div>
           </div>
         ) : (
+          /* Active Chat Thread */
           messages.map((msg) => {
             const isUser = msg.role === "user";
+            const isCurrentlyStreaming = streamingMessageId === msg.id;
+            const displayContent = isCurrentlyStreaming ? streamedText : msg.content;
+
             return (
               <div
                 key={msg.id}
-                className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-2`}
+                className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"} animate-in fade-in`}
               >
                 {!isUser && (
-                  <div className="w-8 h-8 rounded-xl bg-brand-600/30 border border-aurora-cyan/40 flex items-center justify-center shrink-0 mt-1">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-sky-500/30 to-aurora-cyan/20 border border-sky-400/30 flex items-center justify-center shrink-0 mt-1">
                     <Bot className="w-4 h-4 text-aurora-cyan" />
                   </div>
                 )}
 
-                <div
-                  className={`max-w-2xl rounded-3xl p-4 sm:p-5 space-y-3 ${
-                    isUser
-                      ? "bg-gradient-to-r from-sky-600 to-blue-600 text-white rounded-br-none shadow-lg"
-                      : "glass-panel border border-white/15 text-slate-100 rounded-bl-none shadow-2xl bg-navy-950/60"
-                  }`}
-                >
-                  {/* Message Text Content */}
-                  <div className="prose prose-invert prose-xs sm:prose-sm max-w-none text-slate-100 leading-relaxed whitespace-pre-wrap">
-                    {msg.content}
+                <div className={`max-w-2xl space-y-2.5 ${isUser ? "text-right" : "text-left"}`}>
+                  {/* Sender Header */}
+                  <div className={`text-[11px] font-medium text-slate-400 flex items-center gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+                    <span>{isUser ? "You" : "WeatherGPT"}</span>
+                    {!isUser && msg.location?.name && (
+                      <span className="text-[10px] text-sky-400 flex items-center gap-1 font-normal">
+                        • {msg.location.name}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
                   </div>
 
-                  {/* 1. Embedded Weather Summary Card */}
-                  {!isUser && msg.weatherSummary && (
-                    <div className="mt-3 p-4 rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/15 shadow-xl space-y-3">
-                      <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
-                          <span className="text-xs sm:text-sm font-bold text-white">
-                            {msg.location?.name || currentLocation.name}
-                            {msg.location?.country ? `, ${msg.location.country}` : ""}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          Live Verified
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-3xl sm:text-4xl font-black text-white">
-                              {convertTemp(msg.weatherSummary.temperature ?? 0, unit)}°{unit}
-                            </span>
-                            <span className="text-xs text-slate-300">
-                              Feels {convertTemp(msg.weatherSummary.feelsLike ?? 0, unit)}°{unit}
-                            </span>
-                          </div>
-                          <p className="text-xs text-sky-300 font-medium mt-0.5">
-                            {msg.weatherSummary.conditionText || "Clear"}
-                          </p>
-                        </div>
-                        <div className="shrink-0">
-                          <Weather3DIcon
-                            condition={msg.weatherSummary.conditionText || "clear"}
-                            isNight={!msg.weatherSummary.isDay}
-                            size="sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* 6 Key Meteorological Parameters Grid */}
-                      <div className="grid grid-cols-3 gap-2 pt-1 text-[11px]">
-                        <div className="p-2 rounded-xl bg-black/25 border border-white/5 flex flex-col">
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <Droplets className="w-3 h-3 text-sky-400" /> Humidity
-                          </span>
-                          <strong className="text-white mt-0.5">{msg.weatherSummary.humidity ?? 0}%</strong>
-                        </div>
-                        <div className="p-2 rounded-xl bg-black/25 border border-white/5 flex flex-col">
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <Wind className="w-3 h-3 text-teal-400" /> Wind
-                          </span>
-                          <strong className="text-white mt-0.5">{Math.round(msg.weatherSummary.windSpeed ?? 0)} km/h</strong>
-                        </div>
-                        <div className="p-2 rounded-xl bg-black/25 border border-white/5 flex flex-col">
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <Sun className="w-3 h-3 text-amber-400" /> UV Index
-                          </span>
-                          <strong className="text-white mt-0.5">
-                            {msg.weatherSummary.uvIndex ?? 0} ({(msg.weatherSummary.uvIndex ?? 0) >= 6 ? "High" : "Mod"})
-                          </strong>
-                        </div>
-                        <div className="p-2 rounded-xl bg-black/25 border border-white/5 flex flex-col">
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <Droplets className="w-3 h-3 text-blue-400" /> Rain Prob
-                          </span>
-                          <strong className="text-white mt-0.5">
-                            {msg.dailyForecast?.[0]?.precipitationProb ??
-                              ((msg.weatherSummary.precipitation ?? 0) > 0 ? 90 : 15)}
-                            %
-                          </strong>
-                        </div>
-                        <div className="p-2 rounded-xl bg-black/25 border border-white/5 flex flex-col">
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <Gauge className="w-3 h-3 text-emerald-400" /> AQI
-                          </span>
-                          <strong className="text-white mt-0.5">
-                            {msg.airQuality?.aqi ?? 45} ({msg.airQuality?.category ?? "Good"})
-                          </strong>
-                        </div>
-                        <div className="p-2 rounded-xl bg-black/25 border border-white/5 flex flex-col">
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <Eye className="w-3 h-3 text-indigo-400" /> Visibility
-                          </span>
-                          <strong className="text-white mt-0.5">
-                            {msg.weatherSummary.visibility ? msg.weatherSummary.visibility.toFixed(1) : "10.0"} km
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 2. Embedded Dual-City Comparison Card */}
-                  {!isUser && msg.comparisonData && (
-                    <div className="mt-3 p-4 rounded-2xl bg-gradient-to-br from-indigo-950/60 to-navy-950/70 border border-aurora-cyan/30 shadow-2xl space-y-3">
-                      <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                        <div className="flex items-center gap-2">
-                          <GitCompare className="w-4 h-4 text-aurora-cyan shrink-0" />
-                          <span className="text-xs sm:text-sm font-bold text-white">
-                            {msg.comparisonData.cityA.location.name} vs {msg.comparisonData.cityB.location.name}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-aurora-cyan/20 text-aurora-cyan border border-aurora-cyan/30">
-                          Dual-City Comparison
-                        </span>
-                      </div>
-
-                      {/* Highlights */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                        <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200">
-                          <span className="text-[10px] uppercase font-bold text-emerald-300 block">Best for Travel</span>
-                          <strong>{msg.comparisonData.recommendations.betterForTravel}</strong>
-                        </div>
-                        <div className="p-2 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-200">
-                          <span className="text-[10px] uppercase font-bold text-sky-300 block">Cleaner Air</span>
-                          <strong>{msg.comparisonData.recommendations.betterAirQuality}</strong>
-                        </div>
-                        <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200">
-                          <span className="text-[10px] uppercase font-bold text-amber-300 block">Cooler Climate</span>
-                          <strong>{msg.comparisonData.recommendations.coolerClimate}</strong>
-                        </div>
-                      </div>
-
-                      {/* Side-by-Side Table */}
-                      <div className="space-y-1 pt-1">
-                        {msg.comparisonData.metricDifferences.map((m, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2 rounded-xl bg-black/30 border border-white/5 text-[11px] flex items-center justify-between gap-2"
-                          >
-                            <span className="text-slate-300 font-medium">{m.metric}</span>
-                            <div className="flex items-center gap-3 font-mono">
-                              <span className={m.winner === "A" ? "text-emerald-400 font-bold" : "text-slate-400"}>
-                                {msg.comparisonData?.cityA.location.name}: {m.cityAValue}
-                              </span>
-                              <span className="text-slate-500">|</span>
-                              <span className={m.winner === "B" ? "text-emerald-400 font-bold" : "text-slate-400"}>
-                                {msg.comparisonData?.cityB.location.name}: {m.cityBValue}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 3. Embedded Recommendation Badge & Action Plan */}
-                  {!isUser && msg.recommendation && (
-                    <div className="mt-3 pt-3 border-t border-white/10 space-y-3">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-bold border ${msg.recommendation.badgeColor}`}
-                        >
-                          {msg.recommendation.badgeText}
-                        </span>
-
-                        <span className="text-xs font-mono text-slate-300">
-                          Feasibility Score: <strong className="text-white">{msg.recommendation.score}/100</strong>
-                        </span>
-                      </div>
-
-                      {/* Action Plan Checklist */}
-                      {msg.recommendation.actionPlan && (
-                        <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-xs space-y-1">
-                          <span className="font-semibold text-aurora-cyan block mb-1">
-                            📋 Recommended Action Plan:
-                          </span>
-                          {msg.recommendation.actionPlan.map((action, aidx) => (
-                            <div key={aidx} className="flex items-start gap-2 text-slate-200">
-                              <span className="text-aurora-cyan font-bold">•</span>
-                              <span>{action}</span>
-                            </div>
-                          ))}
-                        </div>
+                  {/* Message Bubble */}
+                  <div
+                    className={`rounded-2xl p-4 sm:p-4.5 text-sm leading-relaxed ${
+                      isUser
+                        ? "bg-sky-600 text-white rounded-tr-none shadow-md inline-block text-left"
+                        : "bg-white/[0.04] border border-white/10 text-slate-100 rounded-tl-none shadow-lg"
+                    }`}
+                  >
+                    <div className="prose prose-invert prose-sm max-w-none text-slate-100 whitespace-pre-wrap">
+                      {displayContent}
+                      {isCurrentlyStreaming && (
+                        <span className="inline-block w-2 h-4 ml-1 bg-aurora-cyan animate-pulse align-middle" />
                       )}
                     </div>
-                  )}
 
-                  {/* Follow-up Suggestions */}
-                  {!isUser && msg.suggestedQuestions && msg.suggestedQuestions.length > 0 && (
-                    <div className="pt-2 flex flex-wrap gap-1.5">
-                      {msg.suggestedQuestions.map((q, qi) => (
-                        <button
-                          key={qi}
-                          onClick={() => handleSubmitWithText(q)}
-                          className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-aurora-cyan/15 text-[11px] text-slate-300 hover:text-aurora-cyan border border-white/5 hover:border-aurora-cyan/30 transition-colors text-left"
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    {/* Compact Weather Summary Card (Only when verified weather returned) */}
+                    {!isUser && msg.weatherSummary && !isCurrentlyStreaming && (
+                      <div className="mt-3.5 p-3.5 rounded-2xl bg-black/30 border border-white/10 shadow-md space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                          <div className="flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                            <span className="text-xs font-bold text-white">
+                              {msg.location?.name || currentLocation.name}
+                              {msg.location?.country ? `, ${msg.location.country}` : ""}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            Verified Live
+                          </span>
+                        </div>
 
-                  {/* Message Action Footer */}
-                  {!isUser && (
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 pt-2 border-t border-white/5">
-                      <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleCopy(msg.id, msg.content)}
-                          className="hover:text-white flex items-center gap-1"
-                        >
-                          {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                          <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
-                        </button>
+                        <div className="flex items-center justify-between gap-4 py-1">
+                          <div>
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-3xl font-black text-white">
+                                {convertTemp(msg.weatherSummary.temperature ?? 0, unit)}°{unit}
+                              </span>
+                              <span className="text-xs text-slate-400">
+                                Feels {convertTemp(msg.weatherSummary.feelsLike ?? 0, unit)}°{unit}
+                              </span>
+                            </div>
+                            <p className="text-xs text-sky-300 font-medium">
+                              {msg.weatherSummary.conditionText || "Clear"}
+                            </p>
+                          </div>
+                          <div className="shrink-0">
+                            <Weather3DIcon
+                              condition={msg.weatherSummary.conditionText || "clear"}
+                              isNight={!msg.weatherSummary.isDay}
+                              size="sm"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 4 Clean Metric Pills */}
+                        <div className="grid grid-cols-4 gap-1.5 text-[11px] pt-1">
+                          <div className="p-2 rounded-xl bg-white/5 text-center">
+                            <span className="text-slate-400 block text-[10px]">💧 Humidity</span>
+                            <strong className="text-white mt-0.5 block">{msg.weatherSummary.humidity ?? 0}%</strong>
+                          </div>
+                          <div className="p-2 rounded-xl bg-white/5 text-center">
+                            <span className="text-slate-400 block text-[10px]">💨 Wind</span>
+                            <strong className="text-white mt-0.5 block">{Math.round(msg.weatherSummary.windSpeed ?? 0)} km/h</strong>
+                          </div>
+                          <div className="p-2 rounded-xl bg-white/5 text-center">
+                            <span className="text-slate-400 block text-[10px]">🌧️ Rain</span>
+                            <strong className="text-white mt-0.5 block">
+                              {msg.dailyForecast?.[0]?.precipitationProb ?? 15}%
+                            </strong>
+                          </div>
+                          <div className="p-2 rounded-xl bg-white/5 text-center">
+                            <span className="text-slate-400 block text-[10px]">☀️ UV</span>
+                            <strong className="text-white mt-0.5 block">{msg.weatherSummary.uvIndex ?? 0}</strong>
+                          </div>
+                        </div>
                       </div>
+                    )}
+
+                    {/* Dynamic Activity / Outdoor Recommendation Card (Only when specifically asked) */}
+                    {!isUser && msg.recommendation && !isCurrentlyStreaming && (
+                      <div className="mt-3.5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5" />
+                            {msg.recommendation.title || "Outdoor Recommendation"}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+                            Score: {msg.recommendation.score}/100
+                          </span>
+                        </div>
+                        {msg.recommendation.bestWindow && (
+                          <p className="text-slate-300 text-[11px]">
+                            Optimal Window: <strong className="text-white">{msg.recommendation.bestWindow}</strong>
+                          </p>
+                        )}
+                        {msg.recommendation.actionPlan && msg.recommendation.actionPlan.length > 0 && (
+                          <ul className="space-y-1 text-slate-300 text-[11px] pt-1 border-t border-emerald-500/20">
+                            {msg.recommendation.actionPlan.map((step, idx) => (
+                              <li key={idx} className="flex items-start gap-1.5">
+                                <span className="text-emerald-400 font-bold">•</span>
+                                <span>{step}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Dual-City Comparison Card (Only on comparative queries) */}
+                    {!isUser && msg.comparisonData && !isCurrentlyStreaming && (
+                      <div className="mt-3.5 p-3.5 rounded-2xl bg-black/30 border border-aurora-cyan/30 shadow-md space-y-2.5 text-xs">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                          <span className="font-bold text-white flex items-center gap-1.5">
+                            <GitCompare className="w-3.5 h-3.5 text-aurora-cyan" />
+                            {msg.comparisonData.cityA.location.name} vs {msg.comparisonData.cityB.location.name}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-aurora-cyan/20 text-aurora-cyan">
+                            Side-by-Side
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                          <div className="p-2 rounded-xl bg-white/5">
+                            <span className="text-slate-400 block text-[10px]">Best for Travel</span>
+                            <strong className="text-emerald-300 mt-0.5 block">{msg.comparisonData.recommendations.betterForTravel}</strong>
+                          </div>
+                          <div className="p-2 rounded-xl bg-white/5">
+                            <span className="text-slate-400 block text-[10px]">Cleaner Air</span>
+                            <strong className="text-sky-300 mt-0.5 block">{msg.comparisonData.recommendations.betterAirQuality}</strong>
+                          </div>
+                          <div className="p-2 rounded-xl bg-white/5">
+                            <span className="text-slate-400 block text-[10px]">Cooler Climate</span>
+                            <strong className="text-amber-300 mt-0.5 block">{msg.comparisonData.recommendations.coolerClimate}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Follow-up question chips */}
+                    {!isUser && msg.suggestedQuestions && msg.suggestedQuestions.length > 0 && !isCurrentlyStreaming && (
+                      <div className="pt-2 flex flex-wrap gap-1.5">
+                        {msg.suggestedQuestions.slice(0, 3).map((q, qi) => (
+                          <button
+                            key={qi}
+                            onClick={() => handleSubmitWithText(q)}
+                            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-slate-300 hover:text-aurora-cyan border border-white/5 transition-colors text-left"
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Message Action Bar */}
+                  {!isUser && !isCurrentlyStreaming && (
+                    <div className="flex items-center gap-3 text-[11px] text-slate-400 px-1">
+                      <button
+                        onClick={() => handleCopy(msg.id, msg.content)}
+                        className="hover:text-white flex items-center gap-1 transition-colors"
+                        title="Copy text"
+                      >
+                        {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleSpeakText(msg.content)}
+                        className="hover:text-white flex items-center gap-1 transition-colors"
+                        title="Read aloud"
+                      >
+                        {isSpeaking ? <VolumeX className="w-3.5 h-3.5 text-aurora-cyan" /> : <Volume2 className="w-3.5 h-3.5" />}
+                        <span>{isSpeaking ? "Stop" : "Speak"}</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -574,21 +644,19 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
           })
         )}
 
-        {/* Loading Indicator */}
+        {/* AI Loading / Thinking State */}
         {isLoading && (
           <div className="flex gap-3 justify-start animate-in fade-in">
-            <div className="w-8 h-8 rounded-xl bg-brand-600/30 border border-aurora-cyan/40 flex items-center justify-center shrink-0">
-              <Bot className="w-4 h-4 text-aurora-cyan" />
+            <div className="w-8 h-8 rounded-xl bg-sky-500/20 border border-sky-400/30 flex items-center justify-center shrink-0 mt-1">
+              <Bot className="w-4 h-4 text-aurora-cyan animate-pulse" />
             </div>
-            <div className="p-4 rounded-3xl glass-panel border border-white/15 rounded-bl-none flex items-center gap-3 bg-navy-950/60">
+            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 rounded-tl-none flex items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-aurora-cyan animate-bounce" />
-                <div className="w-2 h-2 rounded-full bg-brand-400 animate-bounce [animation-delay:0.2s]" />
-                <div className="w-2 h-2 rounded-full bg-aurora-teal animate-bounce [animation-delay:0.4s]" />
+                <div className="w-2 h-2 rounded-full bg-sky-400 animate-bounce [animation-delay:0.2s]" />
+                <div className="w-2 h-2 rounded-full bg-teal-400 animate-bounce [animation-delay:0.4s]" />
               </div>
-              <span className="text-xs text-slate-300 font-mono">
-                Querying numerical atmospheric models & analyzing real observations...
-              </span>
+              <span className="text-xs text-slate-300 font-mono">{loadingPhase}</span>
             </div>
           </div>
         )}
@@ -596,69 +664,61 @@ export const ChatBox: React.FC<ChatBoxProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Suggested Quick Prompt Pills Above Input */}
-      <div className="px-4 py-2 border-t border-white/5 flex items-center gap-1.5 overflow-x-auto scrollbar-none bg-navy-950/40">
-        <span className="text-[10px] font-bold uppercase text-slate-500 shrink-0">Suggestions:</span>
-        {suggestionPills.slice(0, 6).map((p, i) => (
-          <button
-            key={i}
-            onClick={() => handleSubmitWithText(p)}
-            className="px-2.5 py-1 rounded-full bg-white/5 hover:bg-sky-500/20 text-[11px] text-slate-300 hover:text-sky-200 border border-white/10 hover:border-sky-400/40 whitespace-nowrap transition-colors shrink-0"
+      {/* 3. Bottom Composer */}
+      <div className="p-3 sm:p-4 border-t border-white/10 bg-navy-950/80 backdrop-blur-xl shrink-0">
+        <div className="max-w-3xl mx-auto">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmitWithText(inputText);
+            }}
+            className="flex items-end gap-2 p-2 rounded-2xl bg-white/[0.06] border border-white/15 focus-within:border-aurora-cyan/50 focus-within:ring-1 focus-within:ring-aurora-cyan/30 transition-all shadow-xl"
           >
-            {p}
-          </button>
-        ))}
-      </div>
+            {/* Working Voice Input Button */}
+            <button
+              type="button"
+              onClick={toggleVoiceInput}
+              className={`p-2.5 rounded-xl border transition-all shrink-0 ${
+                isListening
+                  ? "bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse"
+                  : "hover:bg-white/10 text-slate-300 border-transparent"
+              }`}
+              title={isListening ? "Listening... click to stop" : "Voice input"}
+              aria-label="Voice input"
+            >
+              {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
 
-      {/* Input Prompt Box Bottom */}
-      <div className="p-4 border-t border-white/10 bg-navy-950/80 backdrop-blur-xl">
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          {/* Voice Input Button */}
-          <button
-            type="button"
-            onClick={toggleVoiceInput}
-            className={`p-3 rounded-2xl border transition-all ${
-              isListening
-                ? "bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse shadow-neon-rose"
-                : "bg-white/5 hover:bg-white/10 text-slate-300 border-white/10"
-            }`}
-            title={isListening ? "Listening... click to stop" : "Speak to AI Weather Agent"}
-          >
-            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          </button>
-
-          {/* GPS Button inside input bar */}
-          <button
-            type="button"
-            onClick={handleUseMyLocation}
-            className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 text-sky-400 border border-white/10 transition-colors"
-            title="Ask weather for current GPS location"
-          >
-            <Navigation className="w-5 h-5" />
-          </button>
-
-          {/* Text Input */}
-          <div className="relative flex-1">
-            <input
-              type="text"
+            {/* Auto-sizing Textarea */}
+            <textarea
+              ref={textareaRef}
+              rows={1}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={`Ask AI Weather Agent about ${currentLocation.name}, Jetpur, rain, travel, or any city...`}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask WeatherGPT anything... (e.g. Will it rain tonight?)"
               disabled={isLoading}
-              className="w-full px-4 py-3 text-sm rounded-2xl bg-white/5 border border-white/10 text-white placeholder:text-slate-400 focus:outline-none focus:border-aurora-cyan/50 focus:ring-2 focus:ring-aurora-cyan/20 transition-all shadow-inner"
+              className="flex-1 bg-transparent px-2 py-1.5 text-sm text-white placeholder:text-slate-400 focus:outline-none resize-none max-h-32 scrollbar-none leading-relaxed"
             />
-          </div>
 
-          {/* Send Button */}
-          <button
-            type="submit"
-            disabled={!inputText.trim() || isLoading}
-            className="px-5 py-3 rounded-2xl bg-gradient-to-r from-sky-500 via-brand-500 to-aurora-cyan text-navy-950 font-black text-sm shadow-neon-cyan hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2"
-          >
-            <span>Ask</span>
-            <Send className="w-4 h-4 fill-navy-950" />
-          </button>
-        </form>
+            {/* Send Button */}
+            <button
+              type="submit"
+              disabled={!inputText.trim() || isLoading}
+              className="p-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-aurora-cyan text-navy-950 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 shadow-sm"
+              title="Send message"
+              aria-label="Send message"
+            >
+              <ArrowUp className="w-4 h-4 font-bold" />
+            </button>
+          </form>
+
+          {/* Footer note */}
+          <div className="flex items-center justify-between text-[10px] text-slate-400 mt-2 px-1">
+            <span>WeatherGPT verifies real meteorological telemetry via Open-Meteo with zero hallucination.</span>
+            <span className="hidden sm:inline font-mono">Shift + Enter for new line</span>
+          </div>
+        </div>
       </div>
     </div>
   );

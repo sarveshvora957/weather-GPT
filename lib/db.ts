@@ -114,63 +114,10 @@ class AppStore {
     const defaultConvId = "conv-welcome";
     this.conversations.set(defaultConvId, {
       id: defaultConvId,
-      title: "Cricket match in Ahmedabad",
-      createdAt: new Date(Date.now() - 3600 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 3600 * 1000).toISOString(),
-      messages: [
-        {
-          id: "msg-user-1",
-          role: "user",
-          content: "I have a cricket match tomorrow at 5 PM in Ahmedabad. Should we play?",
-          timestamp: new Date(Date.now() - 3500 * 1000).toISOString(),
-        },
-        {
-          id: "msg-assistant-1",
-          role: "assistant",
-          content: `### 🏏 Match Analysis: Ahmedabad (Tomorrow around 5 PM)
-
-Conditions tomorrow evening in Ahmedabad show elevated precipitation likelihood (around **65%**) with relative humidity near **68%**. There is a notable possibility of localized showers between 4:30 PM and 7:00 PM that may dampen the outfield and disrupt play.
-
-**Key Meteorological Metrics:**
-* 🌡️ **Expected Temperature:** 28°C (Feels like ~31°C)
-* 🌧️ **Precipitation Probability:** **65%** with passing showers
-* 💨 **Wind Speed:** 14 km/h with gusts up to 22 km/h
-* 💧 **Relative Humidity:** 68%
-* 🍃 **Air Quality Index:** 58 (Moderate)
-
-**AI Playability Verdict:** **⚠️ Moderate Risk — Backup Timing Advised** (Feasibility Score: **58/100**)
-
-> 💡 **Recommendation:** If you're scheduling the match, we recommend shifting the start time to **after 7:30 PM under lights** or planning a morning session (8:00 AM – 11:00 AM) when precipitation probability drops to under 15%.`,
-          timestamp: new Date(Date.now() - 3480 * 1000).toISOString(),
-          intent: "cricket",
-          location: DEFAULT_LOCATION,
-          recommendation: {
-            domain: "cricket",
-            status: "MODERATE_RISK",
-            title: "Cricket & Outdoor Match Feasibility",
-            badgeText: "⚠️ Moderate Risk — Backup Timing Advised",
-            badgeColor: "bg-amber-500/20 text-amber-400 border-amber-500/40",
-            score: 58,
-            reasoning: "Moderate rain probability and humid outfield conditions during early evening.",
-            keyFactors: [
-              { label: "Rain Likelihood", value: "65% Shower Risk", impact: "negative" },
-              { label: "Temperature", value: "28°C Optimal", impact: "positive" },
-              { label: "Wind Gusts", value: "22 km/h Moderate", impact: "positive" },
-            ],
-            actionPlan: [
-              "Keep pitch covers ready before 4 PM.",
-              "Schedule backup match window after 7:30 PM.",
-              "Maintain hydration due to 68% humidity.",
-            ],
-            bestWindow: "Morning 8:00 AM – 11:00 AM or Evening after 7:30 PM",
-          },
-          suggestedQuestions: [
-            "What will the weather be like at 8 PM in Ahmedabad?",
-            "Will it rain heavily in Mumbai this weekend?",
-            "How has Ahmedabad's monsoon climate changed in the past 10 years?",
-          ],
-        },
-      ],
+      title: "New Weather Chat",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messages: [],
     });
   }
 
