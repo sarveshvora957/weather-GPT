@@ -15,6 +15,7 @@ import {
 } from "@/types/weather";
 import { DEFAULT_LOCATION } from "@/lib/weather-service";
 import { SIH_DEMO_SCENARIOS } from "@/lib/demo-scenarios";
+import { useWeatherSettings } from "@/components/weather-context";
 import {
   Plus,
   MessageSquare,
@@ -33,7 +34,7 @@ interface ConversationItem {
 
 function ChatContent() {
   const searchParams = useSearchParams();
-  const [currentLocation, setCurrentLocation] = useState<LocationData>(DEFAULT_LOCATION);
+  const { unit, currentLocation, setCurrentLocation } = useWeatherSettings();
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [activeConvId, setActiveConvId] = useState<string>("conv-welcome");
   const [activeMessages, setActiveMessages] = useState<AIChatMessage[]>([]);
@@ -128,6 +129,7 @@ function ChatContent() {
         conversationId: activeConvId,
         activeLocation: currentLocation,
         isDemoMode: true,
+        unit,
       }),
     });
 
@@ -148,10 +150,9 @@ function ChatContent() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden">
       <WeatherBackground condition="clear" />
-      <SIHDemoBanner onSelectScenario={handleScenarioSelect} />
       <Navbar
         currentLocation={currentLocation}
-        onLocationChange={(loc) => setCurrentLocation(loc)}
+        onLocationChange={setCurrentLocation}
         onOpenSearch={() => setSearchModalOpen(true)}
       />
 

@@ -8,11 +8,12 @@ import { SIHDemoBanner } from "@/components/sih-demo-banner";
 import { WeatherMap } from "@/components/weather-map";
 import { LocationSearch } from "@/components/location-search";
 import { LocationData, WeatherAlert } from "@/types/weather";
-import { WeatherService, DEFAULT_LOCATION } from "@/lib/weather-service";
+import { WeatherService } from "@/lib/weather-service";
+import { useWeatherSettings } from "@/components/weather-context";
 import { Map, Layers, Radio, ShieldAlert } from "lucide-react";
 
 export default function MapPage() {
-  const [currentLocation, setCurrentLocation] = useState<LocationData>(DEFAULT_LOCATION);
+  const { currentLocation, setCurrentLocation } = useWeatherSettings();
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
 
@@ -35,10 +36,9 @@ export default function MapPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden">
       <WeatherBackground condition="clear" />
-      <SIHDemoBanner />
       <Navbar
         currentLocation={currentLocation}
-        onLocationChange={(loc) => setCurrentLocation(loc)}
+        onLocationChange={setCurrentLocation}
         onOpenSearch={() => setSearchModalOpen(true)}
       />
 

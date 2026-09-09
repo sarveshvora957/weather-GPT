@@ -8,20 +8,19 @@ import { SIHDemoBanner } from "@/components/sih-demo-banner";
 import { ClimateAnalytics } from "@/components/climate-analytics";
 import { LocationSearch } from "@/components/location-search";
 import { LocationData } from "@/types/weather";
-import { DEFAULT_LOCATION } from "@/lib/weather-service";
+import { useWeatherSettings } from "@/components/weather-context";
 import { TrendingUp, Globe, Sparkles } from "lucide-react";
 
 export default function ClimatePage() {
-  const [currentLocation, setCurrentLocation] = useState<LocationData>(DEFAULT_LOCATION);
+  const { currentLocation, setCurrentLocation } = useWeatherSettings();
   const [searchModalOpen, setSearchModalOpen] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden">
       <WeatherBackground condition="clear" />
-      <SIHDemoBanner />
       <Navbar
         currentLocation={currentLocation}
-        onLocationChange={(loc) => setCurrentLocation(loc)}
+        onLocationChange={setCurrentLocation}
         onOpenSearch={() => setSearchModalOpen(true)}
       />
 

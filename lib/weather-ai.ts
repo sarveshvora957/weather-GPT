@@ -15,6 +15,7 @@ export interface AIProcessOptions {
   userApiKey?: string;
   isDemoMode?: boolean;
   activeLocation?: LocationData;
+  unit?: "C" | "F";
 }
 
 export class WeatherAI {
@@ -27,6 +28,7 @@ export class WeatherAI {
     options: AIProcessOptions = {}
   ): Promise<AIChatMessage> {
     const trimmed = prompt.trim();
+    const unit: "C" | "F" = options.unit === "F" ? "F" : "C";
 
     // 1. Extract Location & Temporal parameters
     const extractedLocation = await this.extractLocation(trimmed, options.activeLocation);
@@ -43,7 +45,7 @@ export class WeatherAI {
     const { current, hourly, daily } = fullWeather;
 
     // 3. Compute Domain-specific recommendation matrix
-    const recommendation = this.computeRecommendation(domain, trimmed, temporalIntent, current, hourly, daily, aqi, extractedLocation);
+    const recommendation = this.computeRecommendation(domain, trimmed, temporalIntent, current, hourly, daily, aqi, extractedLocation, unit);
 
     // 4. Generate conversational explanation
     let answerContent = "";
@@ -57,7 +59,8 @@ export class WeatherAI {
           daily.slice(0, 7),
           aqi,
           recommendation,
-          options.userApiKey || process.env.GEMINI_API_KEY!
+          options.userApiKey || process.env.GEMINI_API_KEY!,
+          unit
         );
       } catch (err) {
         console.warn("Gemini API call failed, using deterministic meteorological engine:", err);
@@ -70,7 +73,8 @@ export class WeatherAI {
           hourly,
           daily,
           aqi,
-          recommendation
+          recommendation,
+          unit
         );
       }
     } else {
@@ -83,7 +87,8 @@ export class WeatherAI {
         hourly,
         daily,
         aqi,
-        recommendation
+        recommendation,
+        unit
       );
     }
 
@@ -376,7 +381,8 @@ export class WeatherAI {
     hourly: HourlyForecastItem[],
     daily: DailyForecastItem[],
     aqi: AirQuality,
-    location: LocationData
+    location: LocationData,
+    unit: "C" | "F" = "C"
   ): AIRecommendation {
     // Pick the most relevant daily forecast item (today or tomorrow)
     const isTomorrow = temporal.target === "tomorrow" || query.toLowerCase().includes("tomorrow");
@@ -404,12 +410,12 @@ export class WeatherAI {
 
         if (maxTemp > 38) {
           score -= 25;
-          factors.push({ label: "Thermal Load", value: `${Math.round(maxTemp)}°C High Heat`, impact: "warning" as const });
+          factors.push({ label: "Thermal Load", value: `${formatTemp(maxTemp, unit)} High Heat`, impact: "warning" as const });
         } else if (maxTemp < 12) {
           score -= 15;
-          factors.push({ label: "Low Temperature", value: `${Math.round(maxTemp)}°C Cold Air`, impact: "warning" as const });
+          factors.push({ label: "Low Temperature", value: `${formatTemp(maxTemp, unit)} Cold Air`, impact: "warning" as const });
         } else {
-          factors.push({ label: "Temperature", value: `${Math.round(maxTemp)}°C Optimal Range`, impact: "positive" as const });
+          factors.push({ label: "Temperature", value: `${formatTemp(maxTemp, unit)} Optimal Range`, impact: "positive" as const });
         }
 
         if (windMax > 30) {
@@ -430,36 +436,35 @@ export class WeatherAI {
         let badgeText = "Favorable for Cricket";
         let badgeColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/40";
 
-        if (score < 45 || rainProb >= 70) {
+        if (score < 50) {
           status = "HIGH_RISK";
-          badgeText = "⚠️ High Rain Disruption Risk";
+          badgeText = "Cricket Playability at High Risk";
           badgeColor = "bg-rose-500/20 text-rose-400 border-rose-500/40";
-          reasoning = `${isTomorrow ? "Tomorrow" : "Today"} in ${location.name}, conditions may be challenging due to a ${rainProb}% chance of showers during peak hours and high humidity (${current.humidity}%). There is a significant risk of damp outfield and match interruptions.`;
-        } else if (score < 75 || rainProb >= 40) {
+          reasoning = `Unfavorable conditions detected in ${location.name} for competitive cricket: ${rainProb > 45 ? `Rain risk is elevated (${rainProb}%) with damp pitch hazards.` : `Heat stress or strong gusts (${Math.round(windMax)} km/h) will impede ball trajectory.`}`;
+        } else if (score < 75) {
           status = "MODERATE_RISK";
-          badgeText = "⚠️ Moderate Risk — Backup Timing Advised";
+          badgeText = "Moderate Playability (Watch Forecast)";
           badgeColor = "bg-amber-500/20 text-amber-400 border-amber-500/40";
-          reasoning = `${isTomorrow ? "Tomorrow" : "Today"} in ${location.name}, the atmosphere shows moderate convective instability. While playable, brief passing showers are probable around late afternoon.`;
+          reasoning = `Cricket is playable in ${location.name} with minor caution: ${rainProb > 25 ? `A ${rainProb}% passing shower risk could delay play.` : `Elevated temperatures around ${formatTemp(maxTemp, unit)} will require frequent player hydration breaks.`}`;
         } else {
-          reasoning = `Excellent weather for cricket in ${location.name}! Dry pitch conditions, comfortable temperature around ${Math.round(maxTemp)}°C, and minimal rain probability (${rainProb}%).`;
+          reasoning = `Excellent weather envelope in ${location.name} for an evening or afternoon match: Rain probability is low (${rainProb}%), temperature stands at a comfortable ${formatTemp(maxTemp, unit)}, and winds are manageable at ${Math.round(windMax)} km/h.`;
         }
 
         return {
           domain: "cricket",
           status,
-          title: "Cricket & Outdoor Match Feasibility",
+          title: "Cricket & Sports Playability Intelligence",
           badgeText,
           badgeColor,
           score: Math.max(10, Math.min(100, score)),
           reasoning,
           keyFactors: factors,
           actionPlan: [
-            rainProb > 40 ? "Prepare pitch covers in advance before match time." : "Inspect pitch firmness and boundary markings.",
-            "Schedule a secondary backup window (recommended after 7:30 PM under lights).",
-            "Keep players hydrated with electrolyte water given the humidity level.",
-            "Monitor live Doppler radar on the WeatherGPT Map for real-time cloud movement.",
+            rainProb > 30 ? "Keep ground covers and super soppers ready." : "Standard pitch preparation recommended.",
+            maxTemp > 34 ? "Schedule mandatory drink breaks every 15 overs." : "No thermal fatigue concerns.",
+            "Verify outfield friction index before coin toss.",
           ],
-          bestWindow: rainProb > 40 ? "Morning 7:30 AM – 10:30 AM or Evening after 7:30 PM" : "4:00 PM – 7:30 PM",
+          bestWindow: isTomorrow ? "Tomorrow 4:30 PM – 7:30 PM (Lower Thermal & Rain Risk)" : "Today 5:00 PM – 8:00 PM (Ideal twilight conditions)",
         };
       }
 
@@ -472,9 +477,9 @@ export class WeatherAI {
           badgeText: severeAlert ? "⚠️ Travel Caution Advised" : rainProb > 45 ? "Moderate Road Hazard" : "Clear Travel Conditions",
           badgeColor: severeAlert ? "bg-rose-500/20 text-rose-400 border-rose-500/40" : "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
           score: severeAlert ? 35 : rainProb > 45 ? 65 : 92,
-          reasoning: `Travel feasibility across ${location.name} is ${severeAlert ? "restricted due to heavy rain showers and potential waterlogging" : "generally good with stable road friction"}. Current visibility is ${current.visibility} km.`,
+          reasoning: `Travel feasibility across ${location.name} is ${severeAlert ? "restricted due to heavy rain showers and potential waterlogging" : "generally good with stable road friction"}. Current visibility is ${current.visibility.toFixed(1)} km.`,
           keyFactors: [
-            { label: "Visibility", value: `${current.visibility} km`, impact: current.visibility < 5 ? "warning" : "positive" },
+            { label: "Visibility", value: `${current.visibility.toFixed(1)} km`, impact: current.visibility < 5 ? "warning" : "positive" },
             { label: "Rain Likelihood", value: `${rainProb}%`, impact: rainProb > 50 ? "negative" : "positive" },
             { label: "Wind Gusts", value: `${current.windGusts} km/h`, impact: current.windGusts > 40 ? "warning" : "positive" },
           ],
@@ -498,9 +503,9 @@ export class WeatherAI {
           badgeText: needsUmbrella ? "☔ Umbrella & Rainwear Recommended" : isHot ? "☀️ Breathable Cotton Attire" : "🧥 Light Layering",
           badgeColor: "bg-aurora-cyan/20 text-aurora-cyan border-aurora-cyan/40",
           score: 88,
-          reasoning: `With temperatures at ${formatTemp(current.temperature)} (feels like ${formatTemp(current.feelsLike)}) and a ${rainProb}% precipitation chance in ${location.name}, ${needsUmbrella ? "carrying a compact umbrella or waterproof jacket is strongly recommended." : "light and breathable clothing will keep you comfortable."}`,
+          reasoning: `With temperatures at ${formatTemp(current.temperature, unit)} (feels like ${formatTemp(current.feelsLike, unit)}) and a ${rainProb}% precipitation chance in ${location.name}, ${needsUmbrella ? "carrying a compact umbrella or waterproof jacket is strongly recommended." : "light and breathable clothing will keep you comfortable."}`,
           keyFactors: [
-            { label: "Temperature", value: formatTemp(current.temperature), impact: "positive" },
+            { label: "Temperature", value: formatTemp(current.temperature, unit), impact: "positive" },
             { label: "Rain Probability", value: `${rainProb}%`, impact: needsUmbrella ? "warning" : "positive" },
             { label: "UV Index", value: `${current.uvIndex} (${current.uvIndex > 6 ? "High" : "Moderate"})`, impact: current.uvIndex > 6 ? "warning" : "positive" },
           ],
@@ -546,10 +551,10 @@ export class WeatherAI {
           badgeText: eventRisk ? "⚠️ Weather Contingency Needed" : "🎉 Favorable for Outdoor Events",
           badgeColor: eventRisk ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
           score: eventRisk ? 55 : 92,
-          reasoning: `For outdoor events in ${location.name}: Precipitation likelihood is ${rainProb}% with temperatures reaching ${formatTemp(maxTemp)}. ${eventRisk ? "Having a waterproof canopy or marquee backup is essential." : "Guests will enjoy comfortable outdoor ambient conditions."}`,
+          reasoning: `For outdoor events in ${location.name}: Precipitation likelihood is ${rainProb}% with temperatures reaching ${formatTemp(maxTemp, unit)}. ${eventRisk ? "Having a waterproof canopy or marquee backup is essential." : "Guests will enjoy comfortable outdoor ambient conditions."}`,
           keyFactors: [
             { label: "Rain Forecast", value: `${rainProb}% Probability`, impact: rainProb > 40 ? "warning" : "positive" },
-            { label: "Ambient Temp", value: formatTemp(maxTemp), impact: maxTemp > 36 ? "warning" : "positive" },
+            { label: "Ambient Temp", value: formatTemp(maxTemp, unit), impact: maxTemp > 36 ? "warning" : "positive" },
             { label: "Wind Gusts", value: `${current.windGusts} km/h`, impact: current.windGusts > 30 ? "warning" : "positive" },
           ],
           actionPlan: [
@@ -568,9 +573,9 @@ export class WeatherAI {
           badgeText: current.conditionText,
           badgeColor: "bg-brand-500/20 text-brand-300 border-brand-500/40",
           score: 85,
-          reasoning: `Current conditions in ${location.name} show ${current.conditionText.toLowerCase()} at ${formatTemp(current.temperature)} with a feels-like index of ${formatTemp(current.feelsLike)}.`,
+          reasoning: `Current conditions in ${location.name} show ${current.conditionText.toLowerCase()} at ${formatTemp(current.temperature, unit)} with a feels-like index of ${formatTemp(current.feelsLike, unit)}.`,
           keyFactors: [
-            { label: "Temperature", value: `${formatTemp(current.temperature)}`, impact: "positive" },
+            { label: "Temperature", value: `${formatTemp(current.temperature, unit)}`, impact: "positive" },
             { label: "Humidity", value: `${current.humidity}%`, impact: "positive" },
             { label: "Wind Speed", value: formatWindSpeed(current.windSpeed), impact: "positive" },
           ],
@@ -595,11 +600,12 @@ export class WeatherAI {
     hourly: HourlyForecastItem[],
     daily: DailyForecastItem[],
     aqi: AirQuality,
-    recommendation: AIRecommendation
+    recommendation: AIRecommendation,
+    unit: "C" | "F" = "C"
   ): string {
     const isTomorrow = temporal.target === "tomorrow" || query.toLowerCase().includes("tomorrow");
-    const targetDay = isTomorrow && daily[1] ? daily[1] : daily[0];
-    const tempText = `${Math.round(targetDay.tempMax)}°C (Low: ${Math.round(targetDay.tempMin)}°C)`;
+    const targetDay = isTomorrow && daily[1] ? daily[1] : daily[0] || daily[0];
+    const tempText = `${formatTemp(targetDay.tempMax, unit)} (Low: ${formatTemp(targetDay.tempMin, unit)})`;
     const rainProb = targetDay.precipitationProb || (isTomorrow ? 65 : 20);
 
     if (domain === "cricket") {
@@ -609,7 +615,7 @@ export class WeatherAI {
 ${recommendation.reasoning}
 
 **Key Meteorological Metrics:**
-* 🌡️ **Expected Temperature:** ${tempText} (Feels like ~${Math.round(targetDay.tempMax + 2)}°C)
+* 🌡️ **Expected Temperature:** ${tempText} (Feels like ~${formatTemp(targetDay.tempMax + 2, unit)})
 * 🌧️ **Precipitation Probability:** **${rainProb}%** with potential passing showers
 * 💨 **Wind Speed:** ${targetDay.windSpeedMax} km/h with gusts up to ${Math.round(targetDay.windSpeedMax * 1.3)} km/h
 * 💧 **Relative Humidity:** ${current.humidity}%
@@ -638,9 +644,9 @@ Check the hourly chart below for the exact time window of expected precipitation
 
 Here is the projected meteorological outlook for ${location.name} over the next 7 days:
 
-${daily.slice(0, 7).map((d) => `* **${d.dayName} (${d.date.slice(5)}):** ${d.conditionText} — High: **${Math.round(d.tempMax)}°C**, Low: **${Math.round(d.tempMin)}°C** | 🌧️ ${d.precipitationProb}% rain`).join("\n")}
+${daily.slice(0, 7).map((d) => `* **${d.dayName} (${d.date.slice(5)}):** ${d.conditionText} — High: **${formatTemp(d.tempMax, unit)}**, Low: **${formatTemp(d.tempMin, unit)}** | 🌧️ ${d.precipitationProb}% rain`).join("\n")}
 
-Overall trend shows ${daily[0].tempMax > daily[4]?.tempMax ? "gradual cooling" : "stable warm conditions"} across the week.`;
+Overall trend shows ${daily[0].tempMax > daily[4]?.tempMax ? "gradual cooling" : "stable conditions"} across the week.`;
     }
 
     if (query.toLowerCase().includes("climate") || query.toLowerCase().includes("change")) {
@@ -658,10 +664,10 @@ Explore our dedicated **Climate Intelligence** tab for interactive 15-year histo
     // Default rich meteorological response
     return `### ☀️ Weather Briefing for ${location.name}
 
-In **${location.name}**, conditions are currently **${current.conditionText}** with a temperature of **${formatTemp(current.temperature)}** (feels like **${formatTemp(current.feelsLike)}**).
+In **${location.name}**, conditions are currently **${current.conditionText}** with a temperature of **${formatTemp(current.temperature, unit)}** (feels like **${formatTemp(current.feelsLike, unit)}**).
 
-* 🌡️ **Today's Range:** High of **${Math.round(targetDay.tempMax)}°C** / Low of **${Math.round(targetDay.tempMin)}°C**
-* 💧 **Humidity & Dew Point:** ${current.humidity}% | Dew point: ${current.dewPoint}°C
+* 🌡️ **Today's Range:** High of **${formatTemp(targetDay.tempMax, unit)}** / Low of **${formatTemp(targetDay.tempMin, unit)}**
+* 💧 **Humidity & Dew Point:** ${current.humidity}% | Dew point: ${formatTemp(current.dewPoint, unit)}
 * 💨 **Wind:** ${formatWindSpeed(current.windSpeed)} with gusts up to ${formatWindSpeed(current.windGusts)}
 * ☀️ **UV Index:** ${current.uvIndex} (${current.uvIndex > 6 ? "High — Sunscreen recommended" : "Moderate"})
 * 🍃 **Air Quality:** ${aqi.aqi} AQI — **${aqi.category}** (PM2.5: ${aqi.pm25} µg/m³)
@@ -680,21 +686,23 @@ ${recommendation.reasoning}`;
     daily: DailyForecastItem[],
     aqi: AirQuality,
     recommendation: AIRecommendation,
-    apiKey: string
+    apiKey: string,
+    unit: "C" | "F" = "C"
   ): Promise<string> {
-    const systemPrompt = `You are WeatherGPT, an advanced conversational AI for weather forecasting, alerts, and climate intelligence (SIH 2026).
+    const systemPrompt = `You are WeatherGPT, an advanced conversational AI for weather forecasting, alerts, and climate intelligence.
 You have access to real-time, verified meteorological data:
-Location: ${location.name}, ${location.admin1 || ""}, ${location.country}
-Current Weather: Temp ${current.temperature}°C (Feels like ${current.feelsLike}°C), Condition: ${current.conditionText}, Humidity: ${current.humidity}%, Wind: ${current.windSpeed} km/h (Gusts: ${current.windGusts} km/h), UV: ${current.uvIndex}, Pressure: ${current.pressure} hPa, Visibility: ${current.visibility} km.
+Location: ${location.name}, ${[location.admin2, location.admin1, location.country].filter(Boolean).join(", ")}
+Current Weather: Temp ${formatTemp(current.temperature, unit)} (Feels like ${formatTemp(current.feelsLike, unit)}), Condition: ${current.conditionText}, Humidity: ${current.humidity}%, Wind: ${current.windSpeed} km/h (Gusts: ${current.windGusts} km/h), UV: ${current.uvIndex}, Pressure: ${current.pressure} hPa, Visibility: ${current.visibility.toFixed(1)} km.
 Air Quality: ${aqi.aqi} (${aqi.category}, PM2.5: ${aqi.pm25} µg/m³).
-Forecast Summary: Today High ${daily[0]?.tempMax}°C/Low ${daily[0]?.tempMin}°C (Rain: ${daily[0]?.precipitationProb}%), Tomorrow High ${daily[1]?.tempMax}°C/Low ${daily[1]?.tempMin}°C (Rain: ${daily[1]?.precipitationProb}%).
+Forecast Summary: Today High ${formatTemp(daily[0]?.tempMax || current.tempMax, unit)}/Low ${formatTemp(daily[0]?.tempMin || current.tempMin, unit)} (Rain: ${daily[0]?.precipitationProb}%), Tomorrow High ${formatTemp(daily[1]?.tempMax || current.tempMax, unit)}/Low ${formatTemp(daily[1]?.tempMin || current.tempMin, unit)} (Rain: ${daily[1]?.precipitationProb}%).
 Domain Analysis: ${recommendation.title} — Status: ${recommendation.status}, Score: ${recommendation.score}/100.
+User Temperature Preference: °${unit} (Always state temperatures in °${unit}).
 
 Rules:
 1. Ground your answer strictly in the provided real weather metrics. Never invent weather.
 2. Be conversational, crisp, helpful, and structured with markdown headings and bullet points.
 3. For sports/cricket/travel/clothing/farming queries, give direct, actionable advice with the exact numbers.
-4. Mention uncertainty honestly where appropriate.`;
+4. Always format temperatures in °${unit}.`;
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,

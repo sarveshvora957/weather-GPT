@@ -14,12 +14,13 @@ import {
   DailyForecastItem,
   AirQuality,
 } from "@/types/weather";
-import { WeatherService, DEFAULT_LOCATION } from "@/lib/weather-service";
+import { WeatherService } from "@/lib/weather-service";
+import { useWeatherSettings } from "@/components/weather-context";
 import { Lightbulb, Sparkles } from "lucide-react";
 
 export default function RecommendationsPage() {
   const router = useRouter();
-  const [currentLocation, setCurrentLocation] = useState<LocationData>(DEFAULT_LOCATION);
+  const { currentLocation, setCurrentLocation } = useWeatherSettings();
   const [currentWeather, setCurrentWeather] = useState<CurrentWeather | null>(null);
   const [daily, setDaily] = useState<DailyForecastItem[]>([]);
   const [aqi, setAqi] = useState<AirQuality | null>(null);
@@ -49,10 +50,9 @@ export default function RecommendationsPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden">
       <WeatherBackground condition="clear" />
-      <SIHDemoBanner />
       <Navbar
         currentLocation={currentLocation}
-        onLocationChange={(loc) => setCurrentLocation(loc)}
+        onLocationChange={setCurrentLocation}
         onOpenSearch={() => setSearchModalOpen(true)}
       />
 

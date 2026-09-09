@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { HourlyForecastItem } from "@/types/weather";
+import { convertTemp } from "@/lib/utils";
 import {
   AreaChart,
   Area,
@@ -41,8 +42,8 @@ export const WeatherCharts: React.FC<WeatherChartsProps> = ({
 
     return {
       hour: hourStr,
-      temperature: h.temperature,
-      feelsLike: h.feelsLike,
+      temperature: convertTemp(h.temperature, unit),
+      feelsLike: convertTemp(h.feelsLike, unit),
       rainProb: h.precipitationProb,
       rainVol: h.precipitation,
       windSpeed: h.windSpeed,

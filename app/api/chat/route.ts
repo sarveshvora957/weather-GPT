@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { prompt, conversationId, activeLocation, isDemoMode, userApiKey } = body;
+    const { prompt, conversationId, activeLocation, isDemoMode, userApiKey, unit = "C" } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Missing prompt parameter." }, { status: 400 });
@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       activeLocation,
       isDemoMode,
       userApiKey,
+      unit: unit === "F" ? "F" : "C",
     });
 
     // Store in DB conversation if conversationId is provided

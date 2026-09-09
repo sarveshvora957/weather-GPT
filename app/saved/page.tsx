@@ -9,11 +9,13 @@ import { SIHDemoBanner } from "@/components/sih-demo-banner";
 import { LocationSearch } from "@/components/location-search";
 import { LocationData, CurrentWeather } from "@/types/weather";
 import { WeatherService, DEFAULT_LOCATION, POPULAR_LOCATIONS } from "@/lib/weather-service";
+import { useWeatherSettings } from "@/components/weather-context";
 import { formatTemp } from "@/lib/utils";
 import { BookmarkCheck, Plus, Trash2, MapPin, ArrowRight, Sun } from "lucide-react";
 
 export default function SavedLocationsPage() {
   const router = useRouter();
+  const { unit, currentLocation, setCurrentLocation } = useWeatherSettings();
   const [saved, setSaved] = useState<LocationData[]>([]);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [weatherMap, setWeatherMap] = useState<Record<string, CurrentWeather>>({});
@@ -84,9 +86,9 @@ export default function SavedLocationsPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden">
       <WeatherBackground condition="clear" />
-      <SIHDemoBanner />
       <Navbar
-        currentLocation={saved[0] || DEFAULT_LOCATION}
+        currentLocation={currentLocation}
+        onLocationChange={setCurrentLocation}
         onOpenSearch={() => setSearchModalOpen(true)}
       />
 
@@ -124,7 +126,10 @@ export default function SavedLocationsPage() {
               return (
                 <div
                   key={loc.name}
-                  onClick={() => router.push(`/dashboard?loc=${encodeURIComponent(loc.name)}`)}
+                  onClick={() => {
+                    setCurrentLocation(loc);
+                    router.push("/");
+                  }}
                   className="p-5 rounded-3xl glass-panel-interactive border border-white/10 flex flex-col justify-between h-44 cursor-pointer group"
                 >
                   <div className="flex items-start justify-between">
@@ -151,7 +156,7 @@ export default function SavedLocationsPage() {
                     <div className="flex items-end justify-between pt-2 border-t border-white/5">
                       <div>
                         <span className="text-3xl font-black text-white font-mono">
-                          {formatTemp(cur.temperature)}
+                          {formatTemp(cur.temperature, unit)}
                         </span>
                         <span className="text-xs text-aurora-cyan font-medium block">
                           {cur.conditionText}

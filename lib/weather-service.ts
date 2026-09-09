@@ -10,11 +10,12 @@ import {
 } from "@/types/weather";
 import { getWeatherCondition, getAQICategory } from "./utils";
 
-// Default fallback city: Ahmedabad, Gujarat, India (as featured in problem statement)
+// Default fallback city: Ahmedabad, Gujarat, India
 export const DEFAULT_LOCATION: LocationData = {
   id: "ahmedabad",
   name: "Ahmedabad",
   admin1: "Gujarat",
+  admin2: "Ahmedabad",
   country: "India",
   countryCode: "IN",
   latitude: 23.0225,
@@ -23,18 +24,18 @@ export const DEFAULT_LOCATION: LocationData = {
   elevation: 53,
 };
 
-// Popular global cities for quick search/switches
+// Popular Indian & global cities for quick switches
 export const POPULAR_LOCATIONS: LocationData[] = [
-  { id: "ahmedabad", name: "Ahmedabad", admin1: "Gujarat", country: "India", latitude: 23.0225, longitude: 72.5714, timezone: "Asia/Kolkata" },
-  { id: "mumbai", name: "Mumbai", admin1: "Maharashtra", country: "India", latitude: 19.076, longitude: 72.8777, timezone: "Asia/Kolkata" },
-  { id: "delhi", name: "New Delhi", admin1: "Delhi", country: "India", latitude: 28.6139, longitude: 77.209, timezone: "Asia/Kolkata" },
-  { id: "bengaluru", name: "Bengaluru", admin1: "Karnataka", country: "India", latitude: 12.9716, longitude: 77.5946, timezone: "Asia/Kolkata" },
-  { id: "london", name: "London", admin1: "England", country: "United Kingdom", latitude: 51.5074, longitude: -0.1278, timezone: "Europe/London" },
-  { id: "newyork", name: "New York", admin1: "New York", country: "United States", latitude: 40.7128, longitude: -74.006, timezone: "America/New_York" },
-  { id: "tokyo", name: "Tokyo", admin1: "Tokyo", country: "Japan", latitude: 35.6762, longitude: 139.6503, timezone: "Asia/Tokyo" },
-  { id: "dubai", name: "Dubai", admin1: "Dubai", country: "United Arab Emirates", latitude: 25.2048, longitude: 55.2708, timezone: "Asia/Dubai" },
-  { id: "paris", name: "Paris", admin1: "Île-de-France", country: "France", latitude: 48.8566, longitude: 2.3522, timezone: "Europe/Paris" },
-  { id: "sydney", name: "Sydney", admin1: "New South Wales", country: "Australia", latitude: -33.8688, longitude: 151.2093, timezone: "Australia/Sydney" },
+  { id: "ahmedabad", name: "Ahmedabad", admin1: "Gujarat", admin2: "Ahmedabad", country: "India", countryCode: "IN", latitude: 23.0225, longitude: 72.5714, timezone: "Asia/Kolkata" },
+  { id: "jetpur", name: "Jetpur", admin1: "Gujarat", admin2: "Rajkot", country: "India", countryCode: "IN", latitude: 21.7548, longitude: 70.6235, timezone: "Asia/Kolkata" },
+  { id: "rajkot", name: "Rajkot", admin1: "Gujarat", admin2: "Rajkot", country: "India", countryCode: "IN", latitude: 22.3039, longitude: 70.8022, timezone: "Asia/Kolkata" },
+  { id: "surat", name: "Surat", admin1: "Gujarat", admin2: "Surat", country: "India", countryCode: "IN", latitude: 21.1702, longitude: 72.8311, timezone: "Asia/Kolkata" },
+  { id: "vadodara", name: "Vadodara", admin1: "Gujarat", admin2: "Vadodara", country: "India", countryCode: "IN", latitude: 22.3072, longitude: 73.1812, timezone: "Asia/Kolkata" },
+  { id: "mumbai", name: "Mumbai", admin1: "Maharashtra", admin2: "Mumbai Suburban", country: "India", countryCode: "IN", latitude: 19.076, longitude: 72.8777, timezone: "Asia/Kolkata" },
+  { id: "delhi", name: "New Delhi", admin1: "Delhi", admin2: "New Delhi", country: "India", countryCode: "IN", latitude: 28.6139, longitude: 77.209, timezone: "Asia/Kolkata" },
+  { id: "bengaluru", name: "Bengaluru", admin1: "Karnataka", admin2: "Bangalore Urban", country: "India", countryCode: "IN", latitude: 12.9716, longitude: 77.5946, timezone: "Asia/Kolkata" },
+  { id: "kolkata", name: "Kolkata", admin1: "West Bengal", admin2: "Kolkata", country: "India", countryCode: "IN", latitude: 22.5726, longitude: 88.3639, timezone: "Asia/Kolkata" },
+  { id: "chennai", name: "Chennai", admin1: "Tamil Nadu", admin2: "Chennai", country: "India", countryCode: "IN", latitude: 13.0827, longitude: 80.2707, timezone: "Asia/Kolkata" },
 ];
 
 export class WeatherService {
@@ -42,21 +43,74 @@ export class WeatherService {
   private static CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
   /**
-   * Search for locations matching query using Open-Meteo Geocoding API
+   * Search for locations matching query using Open-Meteo Geocoding API & Indian Postal API
    */
   static async searchLocations(query: string): Promise<LocationData[]> {
-    if (!query || query.trim().length < 2) return [];
+    const trimmed = (query || "").trim();
+    if (trimmed.length < 2) return [];
 
-    const cacheKey = `geo_${query.toLowerCase().trim()}`;
+    const cacheKey = `geo_${trimmed.toLowerCase()}`;
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) {
       return cached.data;
     }
 
     try {
+      // 1. Check if query is a 6-digit Indian PIN Code
+      if (/^\d{6}$/.test(trimmed)) {
+        try {
+          const pinRes = await fetch(`https://api.postalpincode.in/pincode/${trimmed}`, { next: { revalidate: 3600 } });
+          if (pinRes.ok) {
+            const pinData = await pinRes.json();
+            if (Array.isArray(pinData) && pinData[0]?.Status === "Success" && pinData[0]?.PostOffice?.length > 0) {
+              const primaryPO = pinData[0].PostOffice[0];
+              const poName = primaryPO.Name || primaryPO.Block || "";
+              const district = primaryPO.District || "";
+              const state = primaryPO.State || "";
+
+              // Geocode the resolved place via Open-Meteo
+              const searchQuery = `${poName} ${district} ${state}`.trim();
+              const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
+                poName || district
+              )}&count=10&language=en&format=json`;
+
+              const geoRes = await fetch(geoUrl, { next: { revalidate: 600 } });
+              if (geoRes.ok) {
+                const geoJson = await geoRes.json();
+                const matched = geoJson.results?.find(
+                  (r: any) =>
+                    r.country_code === "IN" &&
+                    (!state || (r.admin1 && r.admin1.toLowerCase().includes(state.toLowerCase())))
+                ) || geoJson.results?.[0];
+
+                if (matched) {
+                  const pinLoc: LocationData = {
+                    id: `pin_${trimmed}_${matched.latitude}_${matched.longitude}`,
+                    name: `${poName} (${trimmed})`,
+                    latitude: matched.latitude,
+                    longitude: matched.longitude,
+                    country: "India",
+                    countryCode: "IN",
+                    admin1: state || matched.admin1 || "",
+                    admin2: district || matched.admin2 || "",
+                    timezone: matched.timezone || "Asia/Kolkata",
+                    postcode: trimmed,
+                  };
+                  this.cache.set(cacheKey, { data: [pinLoc], timestamp: Date.now() });
+                  return [pinLoc];
+                }
+              }
+            }
+          }
+        } catch (pinErr) {
+          console.warn("PIN code resolution error, continuing with standard geocoding:", pinErr);
+        }
+      }
+
+      // 2. Standard Geocoding with Open-Meteo
       const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-        query.trim()
-      )}&count=10&language=en&format=json`;
+        trimmed
+      )}&count=25&language=en&format=json`;
 
       const res = await fetch(url, { next: { revalidate: 600 } });
       if (!res.ok) throw new Error("Geocoding failed");
@@ -66,28 +120,61 @@ export class WeatherService {
         return [];
       }
 
-      const locations: LocationData[] = json.results.map((item: any) => ({
+      // 3. Map results and parse district (admin2) & state (admin1)
+      const rawLocations: LocationData[] = json.results.map((item: any) => ({
         id: `${item.id || item.name}_${item.latitude}_${item.longitude}`,
         name: item.name,
         latitude: item.latitude,
         longitude: item.longitude,
         country: item.country || "",
         countryCode: item.country_code || "",
-        admin1: item.admin1 || item.admin2 || "",
+        admin1: item.admin1 || "",
+        admin2: item.admin2 || item.admin3 || "",
         timezone: item.timezone || "auto",
         elevation: item.elevation || 0,
         population: item.population,
       }));
 
-      this.cache.set(cacheKey, { data: locations, timestamp: Date.now() });
-      return locations;
+      // 4. Sort prioritizing India (IN) locations first
+      const sorted = rawLocations.sort((a, b) => {
+        const aIsIndia = a.countryCode === "IN" || a.country?.toLowerCase() === "india";
+        const bIsIndia = b.countryCode === "IN" || b.country?.toLowerCase() === "india";
+
+        if (aIsIndia && !bIsIndia) return -1;
+        if (!aIsIndia && bIsIndia) return 1;
+
+        // Exact name match priority
+        const aExact = a.name.toLowerCase() === trimmed.toLowerCase();
+        const bExact = b.name.toLowerCase() === trimmed.toLowerCase();
+        if (aExact && !bExact) return -1;
+        if (!aExact && bExact) return 1;
+
+        // Higher population priority
+        return (b.population || 0) - (a.population || 0);
+      });
+
+      // Deduplicate by name + admin1 + country within ~0.05 lat/lon
+      const seen = new Set<string>();
+      const deduplicated: LocationData[] = [];
+
+      for (const loc of sorted) {
+        const key = `${loc.name.toLowerCase()}_${loc.admin1?.toLowerCase() || ""}_${loc.countryCode?.toLowerCase() || ""}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduplicated.push(loc);
+        }
+      }
+
+      this.cache.set(cacheKey, { data: deduplicated, timestamp: Date.now() });
+      return deduplicated;
     } catch (err) {
       console.warn("Geocoding error, falling back to local matches:", err);
       return POPULAR_LOCATIONS.filter(
         (l) =>
-          l.name.toLowerCase().includes(query.toLowerCase()) ||
-          l.country.toLowerCase().includes(query.toLowerCase()) ||
-          (l.admin1 && l.admin1.toLowerCase().includes(query.toLowerCase()))
+          l.name.toLowerCase().includes(trimmed.toLowerCase()) ||
+          l.country.toLowerCase().includes(trimmed.toLowerCase()) ||
+          (l.admin1 && l.admin1.toLowerCase().includes(trimmed.toLowerCase())) ||
+          (l.admin2 && l.admin2.toLowerCase().includes(trimmed.toLowerCase()))
       );
     }
   }

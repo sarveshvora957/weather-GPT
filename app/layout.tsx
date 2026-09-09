@@ -1,25 +1,26 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { WeatherProvider } from "@/components/weather-context";
 
 export const metadata: Metadata = {
-  title: "WeatherGPT — Conversational AI for Weather Forecasting, Alerts & Climate",
+  title: "WeatherGPT — Live Real-Time Weather & Meteorological Intelligence",
   description:
-    "Production-grade conversational AI platform for real-time weather forecasting, severe meteorological alerts, and historical climate intelligence. Built for SIH 2026.",
+    "Modern, accurate real-time weather forecasting, interactive radar, severe alerts, and conversational meteorological AI for India and worldwide locations.",
   keywords: [
     "WeatherGPT",
-    "Conversational AI",
-    "Weather Forecasting",
-    "Climate Information",
+    "Weather App",
+    "India Weather",
+    "Forecast",
     "Severe Weather Alerts",
-    "SIH 2026",
-    "ECMWF",
     "Open-Meteo",
+    "Radar",
+    "Climate",
   ],
-  authors: [{ name: "WeatherGPT AI Engineering Team" }],
+  authors: [{ name: "WeatherGPT Team" }],
   openGraph: {
-    title: "WeatherGPT — Conversational Meteorological AI",
+    title: "WeatherGPT — Live Weather & Meteorological Intelligence",
     description:
-      "Transforming complex numerical weather data into actionable conversational answers, radar maps, and smart alerts.",
+      "Modern, accurate real-time weather app with instant forecasts, hourly radar, severe alerts, and intelligent weather advice.",
     type: "website",
   },
 };
@@ -32,7 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="antialiased selection:bg-aurora-cyan/30 selection:text-white min-h-screen flex flex-col">
-        {children}
+        <WeatherProvider>{children}</WeatherProvider>
       </body>
     </html>
   );

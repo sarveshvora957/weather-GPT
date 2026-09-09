@@ -71,6 +71,13 @@ export function getWeatherCondition(code: number): {
   }
 }
 
+export function convertTemp(celsius: number, unit: 'C' | 'F' = 'C'): number {
+  if (unit === 'F') {
+    return Math.round((celsius * 9) / 5 + 32);
+  }
+  return Math.round(celsius);
+}
+
 export function formatTemp(celsius: number, unit: 'C' | 'F' = 'C'): string {
   if (unit === 'F') {
     const fahrenheit = (celsius * 9) / 5 + 32;

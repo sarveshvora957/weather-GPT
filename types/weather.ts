@@ -5,10 +5,12 @@ export interface LocationData {
   longitude: number;
   country: string;
   countryCode?: string;
-  admin1?: string; // State or Region
+  admin1?: string; // State or Region (e.g. Gujarat)
+  admin2?: string; // District / County / Admin Area (e.g. Rajkot)
   timezone?: string;
   elevation?: number;
   population?: number;
+  postcode?: string;
 }
 
 export interface CurrentWeather {

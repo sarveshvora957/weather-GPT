@@ -9,19 +9,19 @@ import { CityComparison } from "@/components/city-comparison";
 import { LocationSearch } from "@/components/location-search";
 import { LocationData } from "@/types/weather";
 import { DEFAULT_LOCATION, POPULAR_LOCATIONS } from "@/lib/weather-service";
+import { useWeatherSettings } from "@/components/weather-context";
 import { GitCompare } from "lucide-react";
 
 export default function ComparePage() {
-  const [currentLocation, setCurrentLocation] = useState<LocationData>(DEFAULT_LOCATION);
+  const { currentLocation, setCurrentLocation } = useWeatherSettings();
   const [searchModalOpen, setSearchModalOpen] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden">
       <WeatherBackground condition="clear" />
-      <SIHDemoBanner />
       <Navbar
         currentLocation={currentLocation}
-        onLocationChange={(loc) => setCurrentLocation(loc)}
+        onLocationChange={setCurrentLocation}
         onOpenSearch={() => setSearchModalOpen(true)}
       />
 

@@ -9,11 +9,12 @@ import { AlertCard } from "@/components/alert-card";
 import { SmartAlertModal } from "@/components/smart-alert-modal";
 import { LocationSearch } from "@/components/location-search";
 import { LocationData, WeatherAlert, UserCustomAlert } from "@/types/weather";
-import { WeatherService, DEFAULT_LOCATION } from "@/lib/weather-service";
+import { WeatherService } from "@/lib/weather-service";
+import { useWeatherSettings } from "@/components/weather-context";
 import { AlertTriangle, Bell, Plus, ShieldCheck, Zap } from "lucide-react";
 
 export default function AlertsPage() {
-  const [currentLocation, setCurrentLocation] = useState<LocationData>(DEFAULT_LOCATION);
+  const { currentLocation, setCurrentLocation } = useWeatherSettings();
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [customAlerts, setCustomAlerts] = useState<UserCustomAlert[]>([]);
   const [smartModalOpen, setSmartModalOpen] = useState(false);
@@ -87,10 +88,9 @@ export default function AlertsPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden">
       <WeatherBackground condition="thunderstorm" />
-      <SIHDemoBanner />
       <Navbar
         currentLocation={currentLocation}
-        onLocationChange={(loc) => setCurrentLocation(loc)}
+        onLocationChange={setCurrentLocation}
         onOpenSearch={() => setSearchModalOpen(true)}
       />
 

@@ -157,40 +157,42 @@ export const LocationSearch: React.FC<LocationSearchProps> = ({
           {!isSearching && results.length > 0 && (
             <div className="space-y-1">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-2 block">
-                Matching Cities ({results.length})
+                Matching Locations ({results.length})
               </span>
-              {results.map((loc) => (
-                <button
-                  key={loc.id || `${loc.name}-${loc.latitude}`}
-                  onClick={() => {
-                    onSelectLocation(loc);
-                    onClose();
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 rounded-xl hover:bg-white/10 text-xs text-slate-200 transition-colors flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <MapPin className="w-4 h-4 text-aurora-cyan" />
-                    <div>
-                      <span className="font-semibold text-white group-hover:text-aurora-cyan transition-colors">
-                        {loc.name}
-                      </span>
-                      <span className="text-[11px] text-slate-400 ml-2">
-                        {loc.admin1 ? `${loc.admin1}, ` : ""}
-                        {loc.country}
-                      </span>
+              {results.map((loc) => {
+                const subtext = [loc.admin2, loc.admin1, loc.country].filter(Boolean).join(", ");
+                return (
+                  <button
+                    key={loc.id || `${loc.name}-${loc.latitude}-${loc.longitude}`}
+                    onClick={() => {
+                      onSelectLocation(loc);
+                      onClose();
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 rounded-xl hover:bg-white/10 text-xs text-slate-200 transition-colors flex items-center justify-between group"
+                  >
+                    <div className="flex items-center gap-3 truncate">
+                      <MapPin className="w-4 h-4 text-aurora-cyan shrink-0" />
+                      <div className="truncate">
+                        <div className="font-bold text-white group-hover:text-aurora-cyan transition-colors text-sm">
+                          {loc.name}
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate">
+                          {subtext}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    {loc.latitude.toFixed(2)}°, {loc.longitude.toFixed(2)}°
-                  </span>
-                </button>
-              ))}
+                    <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-2">
+                      {loc.countryCode || "IN"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
 
           {!isSearching && query.length >= 2 && results.length === 0 && (
             <div className="py-6 text-center text-xs text-slate-400">
-              No matching locations found for &ldquo;{query}&rdquo;.
+              No location found for &ldquo;{query}&rdquo;. Try searching with city + state or PIN code.
             </div>
           )}
 
@@ -198,7 +200,7 @@ export const LocationSearch: React.FC<LocationSearchProps> = ({
           {!query && (
             <div className="space-y-2 pt-1">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-2 block">
-                Popular Cities
+                Popular Cities in India
               </span>
               <div className="grid grid-cols-2 gap-1.5">
                 {POPULAR_LOCATIONS.map((loc) => (
@@ -213,7 +215,9 @@ export const LocationSearch: React.FC<LocationSearchProps> = ({
                     <MapPin className="w-3.5 h-3.5 text-brand-400 shrink-0" />
                     <div className="truncate text-left">
                       <span className="font-semibold block truncate">{loc.name}</span>
-                      <span className="text-[10px] text-slate-400 block truncate">{loc.country}</span>
+                      <span className="text-[10px] text-slate-400 block truncate">
+                        {[loc.admin2, loc.admin1].filter(Boolean).join(", ") || loc.country}
+                      </span>
                     </div>
                   </button>
                 ))}

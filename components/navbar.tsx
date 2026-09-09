@@ -12,14 +12,17 @@ import {
   MapPin,
   Menu,
   X,
-  Compass,
-  Cpu,
-  Layers,
-  ShieldCheck,
-  Zap,
+  Navigation,
+  CloudSun,
+  Map,
+  CalendarDays,
+  TrendingUp,
+  GitCompare,
+  AlertTriangle,
 } from "lucide-react";
 import { LocationData } from "@/types/weather";
 import { DEFAULT_LOCATION, POPULAR_LOCATIONS } from "@/lib/weather-service";
+import { useWeatherSettings } from "@/components/weather-context";
 
 interface NavbarProps {
   currentLocation?: LocationData;
@@ -28,15 +31,18 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
-  currentLocation = DEFAULT_LOCATION,
+  currentLocation: propLocation,
   onLocationChange,
   onOpenSearch,
 }) => {
   const pathname = usePathname();
+  const { unit, toggleUnit, currentLocation: contextLoc, setCurrentLocation } = useWeatherSettings();
+  const activeLocation = propLocation || contextLoc || DEFAULT_LOCATION;
+
   const [isDark, setIsDark] = useState(true);
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [notificationsCount, setNotificationsCount] = useState(2);
+  const [notificationsCount, setNotificationsCount] = useState(1);
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
 
   useEffect(() => {
@@ -62,88 +68,123 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
+  const handleSelectCity = (loc: LocationData) => {
+    if (onLocationChange) {
+      onLocationChange(loc);
+    }
+    setCurrentLocation(loc);
+    setShowLocationDropdown(false);
+  };
+
+  const navLinks = [
+    { name: "Weather", href: "/" },
+    { name: "AI Chat", href: "/chat" },
+    { name: "Radar", href: "/map" },
+    { name: "Forecast", href: "/forecast" },
+    { name: "Climate", href: "/climate" },
+    { name: "Compare", href: "/compare" },
+    { name: "Alerts", href: "/alerts" },
+  ];
+
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-white/10 glass-panel px-4 lg:px-6 py-3 transition-colors duration-200">
-      <div className="mx-auto flex items-center justify-between gap-4 max-w-7xl">
+    <header className="sticky top-0 z-40 w-full border-b border-white/10 glass-panel px-4 lg:px-6 py-2.5 transition-colors duration-200">
+      <div className="mx-auto flex items-center justify-between gap-3 max-w-7xl">
         {/* Left: Brand Logo & Title */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300"
+            className="md:hidden p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300"
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <Link href="/dashboard" className="flex items-center gap-2.5 group">
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 via-aurora-cyan to-brand-400 p-[1px] shadow-neon-cyan">
-              <div className="flex items-center justify-center w-full h-full rounded-xl bg-navy-950/90 group-hover:bg-navy-900 transition-colors">
-                <Sparkles className="w-5 h-5 text-aurora-cyan animate-pulse" />
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-brand-600 via-aurora-cyan to-brand-400 p-[1px] shadow-neon-cyan">
+              <div className="flex items-center justify-center w-full h-full rounded-2xl bg-navy-950/90 group-hover:bg-navy-900 transition-colors">
+                <CloudSun className="w-5 h-5 text-aurora-cyan" />
               </div>
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-aurora-cyan">
-                  Weather<span className="text-aurora-cyan font-black">GPT</span>
-                </span>
-                <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/30">
-                  SIH 2026
+                <span className="font-black text-base sm:text-lg tracking-tight text-white">
+                  Weather<span className="text-aurora-cyan">GPT</span>
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-mono tracking-tight hidden sm:block">
-                Conversational Meteorological AI
+                Live Meteorology & AI
               </p>
             </div>
           </Link>
         </div>
 
-        {/* Center: Search & Location Switcher */}
-        <div className="hidden sm:flex items-center gap-3 max-w-md w-full justify-center">
-          {/* Quick Global Search Bar */}
-          <button
-            onClick={onOpenSearch}
-            className="flex items-center justify-between w-full max-w-xs px-3.5 py-1.5 text-xs rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all hover:border-aurora-cyan/40 group shadow-inner"
-          >
-            <div className="flex items-center gap-2">
-              <Search className="w-3.5 h-3.5 text-aurora-cyan" />
-              <span>Search any city, forecast, or query...</span>
-            </div>
-            <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-slate-400 font-mono border border-white/10">
-              ⌘K
-            </kbd>
-          </button>
+        {/* Center: Desktop Navigation Tabs */}
+        <nav className="hidden lg:flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/5">
+          {navLinks.map((link) => {
+            const isActive = pathname === link.href;
+            return (
+              <Link
+                key={link.name}
+                href={link.href}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  isActive
+                    ? "bg-aurora-cyan/20 text-aurora-cyan shadow-sm font-bold"
+                    : "text-slate-300 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                {link.name}
+              </Link>
+            );
+          })}
+        </nav>
 
-          {/* Active City Pill with Dropdown */}
+        {/* Center-Right: Search Shortcut & Location Switcher */}
+        <div className="hidden sm:flex items-center gap-2 max-w-xs w-full justify-end">
+          {onOpenSearch && (
+            <button
+              onClick={onOpenSearch}
+              className="flex items-center justify-between w-full max-w-[200px] px-3 py-1.5 text-xs rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all hover:border-aurora-cyan/40 group shadow-inner"
+            >
+              <div className="flex items-center gap-2 truncate">
+                <Search className="w-3.5 h-3.5 text-aurora-cyan shrink-0" />
+                <span className="truncate">Search India...</span>
+              </div>
+              <kbd className="text-[10px] px-1 py-0.5 rounded bg-black/40 text-slate-400 font-mono border border-white/10 shrink-0">
+                ⌘K
+              </kbd>
+            </button>
+          )}
+
+          {/* Active City Dropdown */}
           <div className="relative">
             <button
               onClick={() => setShowLocationDropdown(!showLocationDropdown)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-aurora-cyan transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-aurora-cyan transition-colors"
             >
-              <MapPin className="w-3.5 h-3.5 text-aurora-cyan" />
-              <span className="max-w-[110px] truncate">{currentLocation.name}</span>
+              <MapPin className="w-3.5 h-3.5 text-aurora-cyan shrink-0" />
+              <span className="max-w-[95px] truncate">{activeLocation.name}</span>
             </button>
 
             {showLocationDropdown && (
-              <div className="absolute right-0 mt-2 w-56 p-2 rounded-2xl glass-panel shadow-2xl z-50 animate-in fade-in-50 slide-in-from-top-2 border border-white/15">
-                <div className="text-[11px] font-semibold text-slate-400 px-2 py-1 uppercase tracking-wider">
-                  Popular Locations
+              <div className="absolute right-0 mt-2 w-64 p-2 rounded-2xl glass-panel shadow-2xl z-50 animate-in fade-in-50 border border-white/15">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1">
+                  Popular Indian Cities
                 </div>
                 <div className="space-y-1 mt-1">
                   {POPULAR_LOCATIONS.map((loc) => (
                     <button
                       key={loc.id || loc.name}
-                      onClick={() => {
-                        onLocationChange?.(loc);
-                        setShowLocationDropdown(false);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg flex items-center justify-between transition-colors ${
-                        currentLocation.name === loc.name
-                          ? "bg-aurora-cyan/20 text-aurora-cyan font-medium"
+                      onClick={() => handleSelectCity(loc)}
+                      className={`w-full text-left px-2.5 py-1.5 text-xs rounded-xl flex items-center justify-between transition-colors ${
+                        activeLocation.name.toLowerCase() === loc.name.toLowerCase()
+                          ? "bg-aurora-cyan/20 text-aurora-cyan font-bold"
                           : "hover:bg-white/10 text-slate-300"
                       }`}
                     >
-                      <span className="font-medium">{loc.name}</span>
-                      <span className="text-[10px] text-slate-400">{loc.admin1 || loc.country}</span>
+                      <span className="font-semibold">{loc.name}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {[loc.admin2, loc.admin1].filter(Boolean).join(", ") || loc.country}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -152,18 +193,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Right: Actions, Theme, Notifications & User */}
-        <div className="flex items-center gap-2">
-          {/* SIH Demo Mode Quick Launcher Link */}
-          <Link
-            href="/chat?demo=true"
-            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/30 hover:brightness-110 transition-all shadow-sm"
+        {/* Right: °C/°F Toggle & Theme / Alerts */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Universal Persistent °C / °F Switch */}
+          <button
+            onClick={toggleUnit}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-mono font-black text-white border border-white/20 transition-all shadow-sm"
+            title="Toggle between Celsius and Fahrenheit"
+            aria-label="Toggle Temperature Unit"
           >
-            <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-            <span>SIH Demo Mode</span>
-          </Link>
+            <span className={unit === "C" ? "text-aurora-cyan font-extrabold" : "text-slate-400"}>°C</span>
+            <span className="text-slate-500">/</span>
+            <span className={unit === "F" ? "text-aurora-cyan font-extrabold" : "text-slate-400"}>°F</span>
+          </button>
 
-          {/* Theme Toggle Button */}
+          {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
             className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors"
@@ -189,21 +233,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="absolute right-0 mt-2 w-80 p-3 rounded-2xl glass-panel shadow-2xl z-50 animate-in fade-in-50 border border-white/15">
                 <div className="flex items-center justify-between pb-2 border-b border-white/10">
                   <span className="text-xs font-semibold text-slate-200">Active Weather Alerts</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    2 Active
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono font-bold">
+                    1 Active
                   </span>
                 </div>
                 <div className="space-y-2 mt-2">
-                  <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs">
-                    <p className="font-semibold text-rose-300">Monsoon Rain Alert ({currentLocation.name})</p>
+                  <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs">
+                    <p className="font-bold text-cyan-300">Live Forecast Active</p>
                     <p className="text-[11px] text-slate-300 mt-0.5">
-                      65% rain probability expected during evening hours.
-                    </p>
-                  </div>
-                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
-                    <p className="font-semibold text-amber-300">High UV Index (6.8)</p>
-                    <p className="text-[11px] text-slate-300 mt-0.5">
-                      Wear UV sunscreen between 11:30 AM - 3:30 PM.
+                      Real-time Open-Meteo observations synched for {activeLocation.name}.
                     </p>
                   </div>
                 </div>
@@ -212,85 +250,35 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => setShowNotificationPopup(false)}
                   className="block text-center mt-3 text-[11px] font-medium text-aurora-cyan hover:underline"
                 >
-                  View all alerts & smart preferences →
+                  Manage alert preferences →
                 </Link>
               </div>
             )}
           </div>
-
-          {/* User Profile Avatar */}
-          <Link
-            href="/settings"
-            className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-          >
-            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-aurora-cyan to-brand-500 flex items-center justify-center text-[11px] font-bold text-navy-950">
-              SIH
-            </div>
-            <span className="text-xs font-medium text-slate-300 hidden sm:inline">Presenter</span>
-          </Link>
         </div>
       </div>
 
-      {/* Mobile Drawer Menu */}
+      {/* Mobile Navigation Drawer */}
       {mobileMenuOpen && (
-        <div className="md:hidden mt-3 pt-3 border-t border-white/10 space-y-2">
+        <div className="md:hidden mt-3 pt-3 border-t border-white/10 space-y-2 animate-in fade-in slide-in-from-top-1">
           <div className="grid grid-cols-2 gap-2">
-            <Link
-              href="/dashboard"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl bg-white/5 text-xs font-medium text-slate-200 hover:bg-white/10"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/chat"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl bg-aurora-cyan/15 text-xs font-medium text-aurora-cyan border border-aurora-cyan/30"
-            >
-              WeatherGPT Chat
-            </Link>
-            <Link
-              href="/forecast"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl bg-white/5 text-xs font-medium text-slate-200 hover:bg-white/10"
-            >
-              Forecast
-            </Link>
-            <Link
-              href="/map"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl bg-white/5 text-xs font-medium text-slate-200 hover:bg-white/10"
-            >
-              Radar Map
-            </Link>
-            <Link
-              href="/alerts"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl bg-white/5 text-xs font-medium text-slate-200 hover:bg-white/10"
-            >
-              Alerts
-            </Link>
-            <Link
-              href="/climate"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl bg-white/5 text-xs font-medium text-slate-200 hover:bg-white/10"
-            >
-              Climate
-            </Link>
-            <Link
-              href="/compare"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl bg-white/5 text-xs font-medium text-slate-200 hover:bg-white/10"
-            >
-              Compare
-            </Link>
-            <Link
-              href="/admin"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2 rounded-xl bg-white/5 text-xs font-medium text-slate-200 hover:bg-white/10"
-            >
-              Admin
-            </Link>
+            {navLinks.map((link) => {
+              const isActive = pathname === link.href;
+              return (
+                <Link
+                  key={link.name}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    isActive
+                      ? "bg-aurora-cyan/20 text-aurora-cyan border border-aurora-cyan/30"
+                      : "bg-white/5 text-slate-200 hover:bg-white/10"
+                  }`}
+                >
+                  {link.name}
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}
