@@ -50,24 +50,28 @@ export default function MapPage() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <Map className="w-5 h-5 text-aurora-cyan" />
+                <Map className="w-5 h-5 text-sky-400" />
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                  Interactive Weather Radar & GIS Map
+                  Real-Time Interactive Weather Map
                 </h1>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Real-time meteorological radar overlays, thermal gradients, wind vectors, and severe convective cells
+              <p className="text-xs text-slate-300 mt-0.5">
+                Pan, zoom, search any Indian location, or click anywhere on the map to inspect live weather observations, Doppler radar, and satellite clouds.
               </p>
             </div>
 
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
               <Radio className="w-3.5 h-3.5 animate-pulse" />
-              <span>Live Radar Telemetry</span>
+              <span>Live Doppler Telemetry</span>
             </div>
           </div>
 
           {/* Interactive Radar Component */}
-          <WeatherMap center={currentLocation} alerts={alerts} />
+          <WeatherMap
+            center={currentLocation}
+            alerts={alerts}
+            onSelectLocation={(loc) => setCurrentLocation(loc)}
+          />
 
           {/* Regional Meteorological Information Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

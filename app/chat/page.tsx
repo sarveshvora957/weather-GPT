@@ -73,12 +73,28 @@ function ChatContent() {
     loadConversation("conv-welcome");
   }, []);
 
-  // Handle URL prefilled query or scenario
+  // Handle URL prefilled query, location from map, or scenario
   useEffect(() => {
     const q = searchParams.get("q");
+    const locName = searchParams.get("location");
+    const lat = searchParams.get("lat");
+    const lon = searchParams.get("lon");
     const scenarioId = searchParams.get("scenario");
 
-    if (scenarioId) {
+    if (locName && lat && lon) {
+      const loc: LocationData = {
+        name: locName,
+        latitude: parseFloat(lat),
+        longitude: parseFloat(lon),
+        country: "India",
+      };
+      setCurrentLocation(loc);
+      if (q) {
+        handleSendMessage(q);
+      } else {
+        handleSendMessage(`What is the weather in ${locName}?`);
+      }
+    } else if (scenarioId) {
       const found = SIH_DEMO_SCENARIOS.find((s) => s.id === scenarioId);
       if (found) {
         setCurrentLocation(found.location);
@@ -246,6 +262,7 @@ function ChatContent() {
               currentLocation={currentLocation}
               onSendMessage={handleSendMessage}
               isDemoMode={true}
+              unit={unit}
             />
           </div>
         </main>

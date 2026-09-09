@@ -78,8 +78,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navLinks = [
     { name: "Weather", href: "/" },
-    { name: "AI Chat", href: "/chat" },
-    { name: "Radar", href: "/map" },
+    { name: "AI Weather Agent", href: "/chat" },
+    { name: "Weather Map", href: "/map" },
     { name: "Forecast", href: "/forecast" },
     { name: "Climate", href: "/climate" },
     { name: "Compare", href: "/compare" },

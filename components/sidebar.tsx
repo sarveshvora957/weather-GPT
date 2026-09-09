@@ -23,9 +23,9 @@ export const Sidebar: React.FC = () => {
 
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, badge: "Live" },
-    { name: "WeatherGPT AI", href: "/chat", icon: MessageSquareCode, badge: "AI Core", highlight: true },
+    { name: "AI Weather Agent", href: "/chat", icon: MessageSquareCode, badge: "AI Agent", highlight: true },
+    { name: "Weather Map", href: "/map", icon: Map, badge: "Live Radar" },
     { name: "Detailed Forecast", href: "/forecast", icon: CalendarDays },
-    { name: "Interactive Map", href: "/map", icon: Map },
     { name: "Alerts & Warnings", href: "/alerts", icon: AlertTriangle, badgeColor: "bg-rose-500/20 text-rose-300" },
     { name: "Climate Trends", href: "/climate", icon: TrendingUp },
     { name: "City Comparison", href: "/compare", icon: GitCompare },

@@ -7,6 +7,7 @@ import {
   WeatherAlert,
   AIRecommendation,
   AIChatMessage,
+  ComparisonData,
 } from "@/types/weather";
 import { WeatherService, DEFAULT_LOCATION } from "./weather-service";
 import { formatTemp, formatWindSpeed } from "./utils";
@@ -29,6 +30,37 @@ export class WeatherAI {
   ): Promise<AIChatMessage> {
     const trimmed = prompt.trim();
     const unit: "C" | "F" = options.unit === "F" ? "F" : "C";
+
+    // 0. Check for dual-city comparative query (e.g., "Ahmedabad vs Surat", "Compare Ahmedabad and Surat", "Which is better for travelling today, Ahmedabad or Surat?")
+    const twoLocations = await this.extractTwoLocations(trimmed, options.activeLocation);
+    if (twoLocations) {
+      const [cityA, cityB] = twoLocations;
+      const comparison = await WeatherService.compareCities(cityA, cityB);
+      const comparativeContent = this.generateComparativeResponse(
+        trimmed,
+        cityA,
+        cityB,
+        comparison,
+        unit
+      );
+
+      return {
+        id: `msg-comp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        role: "assistant",
+        content: comparativeContent,
+        timestamp: new Date().toISOString(),
+        intent: "travel",
+        location: cityA,
+        comparisonData: comparison,
+        suggestedQuestions: [
+          `Detailed 7-day forecast for ${cityA.name}`,
+          `Detailed 7-day forecast for ${cityB.name}`,
+          `Will it rain today in ${cityA.name}?`,
+          `Should I carry an umbrella in ${cityB.name}?`,
+        ],
+        isDemo: options.isDemoMode,
+      };
+    }
 
     // 1. Extract Location & Temporal parameters
     const extractedLocation = await this.extractLocation(trimmed, options.activeLocation);
@@ -139,6 +171,14 @@ export class WeatherAI {
       { name: "vadodara", lat: 22.3072, lon: 73.1812, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
       { name: "baroda", lat: 22.3072, lon: 73.1812, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Vadodara" },
       { name: "rajkot", lat: 22.3039, lon: 70.8022, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
+      { name: "jetpur", lat: 21.7554, lon: 70.6276, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Jetpur" },
+      { name: "morbi", lat: 22.812, lon: 70.8384, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Morbi" },
+      { name: "gondal", lat: 21.9619, lon: 70.7997, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Gondal" },
+      { name: "porbandar", lat: 21.6417, lon: 69.6293, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Porbandar" },
+      { name: "somnath", lat: 20.9014, lon: 70.4011, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Somnath" },
+      { name: "anand", lat: 22.5645, lon: 72.9289, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Anand" },
+      { name: "mehsana", lat: 23.588, lon: 72.3693, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Mehsana" },
+      { name: "bhuj", lat: 23.242, lon: 69.6669, country: "India", state: "Gujarat", tz: "Asia/Kolkata", displayName: "Bhuj" },
       { name: "gandhinagar", lat: 23.2156, lon: 72.6369, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
       { name: "bhavnagar", lat: 21.7645, lon: 72.1519, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
       { name: "jamnagar", lat: 22.4707, lon: 70.0577, country: "India", state: "Gujarat", tz: "Asia/Kolkata" },
@@ -246,6 +286,8 @@ export class WeatherAI {
         /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
         /\b(?:at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|o'clock)\b/gi,
         /\b(?:please|can|could|should|will|would|how|what|is|the|are|about|tell|me|show|give|check|forecast|weather|temperature|temp|rain|raining|rainy|humidity|wind|aqi|climate|conditions|outlook|update|report|match|play|cricket|travel|safe|drive)\b/gi,
+        /\b(?:carry|umbrella|coat|jacket|wear|sunglasses|sunscreen|uv|index|dangerous|safe|radiation|around|near|here|my|location|current|outside|outdoors|which|better|difference|between|vs|versus)\b/gi,
+        /\b(?:be|been|being|have|has|had|do|does|did|an|a|i|we|you|he|she|it|they|them|my|me|mine|your|yours|our|ours)\b/gi,
       ];
       for (const pat of stopPatterns) {
         s = s.replace(pat, " ");
@@ -269,10 +311,10 @@ export class WeatherAI {
       }
     }
 
-    // 2. Preposition pattern match: "in [City]", "of [City]", "for [City]", "at [City]", "near [City]", "to [City]"
+    // 2. Preposition pattern match: "in [City]", "of [City]", "for [City]", "at [City]", "from [City]"
     const prepPatterns = [
-      /(?:in|of|for|at|near|around|to|about|from|towards)\s+([a-zA-Z\u0080-\uFFFF\s\.\-]{2,35})/gi,
-      /(?:weather|forecast|temperature|climate|rain|aqi|humidity)\s+(?:in|of|for|at|around)?\s*([a-zA-Z\u0080-\uFFFF\s\.\-]{2,35})/gi,
+      /(?:in|of|for|at|from)\s+([a-zA-Z\u0080-\uFFFF\s\.\-]{2,35})/gi,
+      /(?:weather|forecast|temperature|climate|rain|aqi|humidity)\s+(?:in|of|for|at)?\s*([a-zA-Z\u0080-\uFFFF\s\.\-]{2,35})/gi,
     ];
 
     for (const pattern of prepPatterns) {
@@ -292,24 +334,125 @@ export class WeatherAI {
 
     // 3. Whole query cleaned extraction (e.g., "Vadodara weather", "Chicago 5 day forecast", "Tokyo")
     const cleanedQuery = cleanLocationCandidate(qRaw);
-    if (cleanedQuery.length >= 2 && cleanedQuery.length <= 40) {
-      const results = await WeatherService.searchLocations(cleanedQuery);
-      if (results && results.length > 0) {
-        return results[0];
+    if (cleanedQuery.length >= 3 && cleanedQuery.length <= 40) {
+      // Don't geocode if cleaned text is just common conversational words
+      const ignoreWords = new Set(["pm", "am", "clock", "now", "today", "tomorrow", "day", "week", "near", "around", "here"]);
+      if (!ignoreWords.has(cleanedQuery.toLowerCase())) {
+        const results = await WeatherService.searchLocations(cleanedQuery);
+        if (results && results.length > 0) {
+          return results[0];
+        }
       }
     }
 
-    // 4. Token-level search for individual words (e.g. "Vadodara", "Gandhinagar", "Toronto")
-    const rawTokens = qRaw.split(/\s+/).map((w) => cleanLocationCandidate(w)).filter((w) => w.length >= 3);
-    for (const token of rawTokens) {
-      const results = await WeatherService.searchLocations(token);
-      if (results && results.length > 0) {
-        return results[0];
-      }
-    }
-
-    // 5. Fallback: Use user's currently selected location on the web app (or Ahmedabad if none)
+    // 4. Fallback: Use user's currently selected location on the web app (or Ahmedabad if none)
     return activeLocation || DEFAULT_LOCATION;
+  }
+
+  /**
+   * Dual-location entity extraction for comparative queries (e.g., "Compare Ahmedabad and Surat", "Which is better for travelling today, Ahmedabad or Surat?", "Ahmedabad vs Surat")
+   */
+  public static async extractTwoLocations(
+    query: string,
+    activeLocation?: LocationData
+  ): Promise<[LocationData, LocationData] | null> {
+    const qRaw = query.trim();
+    const qLower = qRaw.toLowerCase();
+
+    // Check if query implies comparison
+    const isComparative =
+      /\b(?:compare|comparison|versus|vs|difference between|which is better|better for|better city|or)\b/i.test(qLower);
+
+    if (!isComparative) return null;
+
+    // Patterns to capture Candidate A and Candidate B
+    const patterns = [
+      /\b(?:compare|comparison between)\s+([a-zA-Z\s\.\-]{2,30}?)\s+(?:and|with|to|vs|versus)\s+([a-zA-Z\s\.\-]{2,30})/i,
+      /\bdifference\s+between\s+([a-zA-Z\s\.\-]{2,30}?)\s+and\s+([a-zA-Z\s\.\-]{2,30})/i,
+      /\b(?:which is better|better for\s+[a-zA-Z\s]+|better|preferable)\s+(?:in|between|today|tomorrow)?\s*([a-zA-Z\s\.\-]{2,30}?)\s+(?:or|and|vs|versus)\s+([a-zA-Z\s\.\-]{2,30})/i,
+      /\b([a-zA-Z]{3,25})\s+(?:vs|versus)\s+([a-zA-Z]{3,25})\b/i,
+      /\b([a-zA-Z]{3,25})\s+or\s+([a-zA-Z]{3,25})\b/i,
+    ];
+
+    for (const pat of patterns) {
+      const match = qRaw.match(pat);
+      if (match && match[1] && match[2]) {
+        // Clean candidates of common filler words
+        const cleanA = match[1].replace(/\b(?:weather|city|temperature|forecast|today|tomorrow|travelling|travel|in|for|between)\b/gi, "").trim();
+        const cleanB = match[2].replace(/\b(?:weather|city|temperature|forecast|today|tomorrow|travelling|travel|in|for|\?)\b/gi, "").trim();
+
+        if (cleanA.length >= 2 && cleanB.length >= 2) {
+          const [locA, locB] = await Promise.all([
+            this.extractLocation(cleanA, activeLocation),
+            this.extractLocation(cleanB, activeLocation),
+          ]);
+
+          if (locA && locB && locA.name.toLowerCase() !== locB.name.toLowerCase()) {
+            return [locA, locB];
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Dual-City Comparative Natural Language Response Formulator
+   */
+  private static generateComparativeResponse(
+    query: string,
+    cityA: LocationData,
+    cityB: LocationData,
+    comp: ComparisonData,
+    unit: "C" | "F" = "C"
+  ): string {
+    const isTravel =
+      query.toLowerCase().includes("travel") ||
+      query.toLowerCase().includes("trip") ||
+      query.toLowerCase().includes("visit") ||
+      query.toLowerCase().includes("tour");
+    const recs = comp.recommendations;
+
+    const currentA = comp.cityA.current;
+    const currentB = comp.cityB.current;
+    const aqiA = comp.cityA.aqi;
+    const aqiB = comp.cityB.aqi;
+
+    const tempA = formatTemp(currentA.temperature, unit);
+    const tempB = formatTemp(currentB.temperature, unit);
+    const feelsA = formatTemp(currentA.feelsLike, unit);
+    const feelsB = formatTemp(currentB.feelsLike, unit);
+    const rainA = comp.cityA.daily[0]?.precipitationProb ?? 0;
+    const rainB = comp.cityB.daily[0]?.precipitationProb ?? 0;
+
+    let verdict = "";
+    if (isTravel) {
+      verdict = `### ✈️ Travel Recommendation: Choose **${recs.betterForTravel}**\n\nFor travelling today, **${recs.betterForTravel}** is the more favorable choice due to ${
+        rainA < rainB
+          ? `significantly lower rain risk (${rainA}% vs ${rainB}%)`
+          : currentA.temperature < currentB.temperature
+          ? `more comfortable ambient temperatures (${tempA} vs ${tempB})`
+          : `more stable overall weather conditions`
+      }.`;
+    } else {
+      verdict = `### ⚖️ Meteorological Comparison: **${cityA.name} vs ${cityB.name}**\n\n* 🏆 **Best for Travel / Outdoor Activities:** **${recs.betterForTravel}**\n* 🍃 **Cleaner Air (AQI):** **${recs.betterAirQuality}** (${aqiA.aqi < aqiB.aqi ? aqiA.aqi : aqiB.aqi} AQI)\n* ❄️ **Cooler Destination:** **${recs.coolerClimate}** (${recs.coolerClimate === cityA.name ? tempA : tempB})`;
+    }
+
+    return `${verdict}
+
+**Side-by-Side Comparison Matrix:**
+
+| Parameter | ${cityA.name} | ${cityB.name} | Advantage / Note |
+| :--- | :--- | :--- | :--- |
+| 🌡️ **Temperature** | **${tempA}** (Feels ${feelsA}) | **${tempB}** (Feels ${feelsB}) | ${recs.coolerClimate} is cooler |
+| 🌧️ **Rain Probability** | **${rainA}%** (${currentA.conditionText}) | **${rainB}%** (${currentB.conditionText}) | ${rainA <= rainB ? cityA.name : cityB.name} has lower rain risk |
+| 💧 **Humidity** | ${currentA.humidity}% | ${currentB.humidity}% | ${currentA.humidity < currentB.humidity ? cityA.name : cityB.name} is less humid |
+| 💨 **Wind Speed** | ${Math.round(currentA.windSpeed)} km/h | ${Math.round(currentB.windSpeed)} km/h | ${Math.abs(currentA.windSpeed - currentB.windSpeed).toFixed(1)} km/h difference |
+| ☀️ **UV Index** | ${currentA.uvIndex} | ${currentB.uvIndex} | ${currentA.uvIndex > 6 || currentB.uvIndex > 6 ? "High UV" : "Moderate"} |
+| 🍃 **Air Quality (AQI)** | ${aqiA.aqi} (${aqiA.category}) | ${aqiB.aqi} (${aqiB.category}) | ${recs.betterAirQuality} has cleaner air |
+
+> 💡 **Meteorologist Verdict:** ${comp.verdict}`;
   }
 
   /**
@@ -607,7 +750,159 @@ export class WeatherAI {
     const targetDay = isTomorrow && daily[1] ? daily[1] : daily[0] || daily[0];
     const tempText = `${formatTemp(targetDay.tempMax, unit)} (Low: ${formatTemp(targetDay.tempMin, unit)})`;
     const rainProb = targetDay.precipitationProb || (isTomorrow ? 65 : 20);
+    const qLower = query.toLowerCase();
 
+    // 1. Specific Hour query (e.g., "What will be the weather around 6 PM?", "at 5 pm in Ahmedabad")
+    if (temporal.specificHour !== undefined) {
+      const hour = temporal.specificHour;
+      const hourFormatted =
+        hour === 0 ? "12:00 AM" : hour === 12 ? "12:00 PM" : hour > 12 ? `${hour - 12}:00 PM` : `${hour}:00 AM`;
+
+      // Find closest hourly item
+      const matchedHour =
+        hourly.find((h) => {
+          try {
+            return new Date(h.time).getHours() === hour;
+          } catch {
+            return false;
+          }
+        }) || hourly[Math.min(hour, hourly.length - 1)] || hourly[0];
+
+      const hTemp = formatTemp(matchedHour.temperature, unit);
+      const hFeels = formatTemp(matchedHour.feelsLike, unit);
+      const hRain = matchedHour.precipitationProb ?? 15;
+
+      return `### 🕕 Weather Outlook at ${hourFormatted} in ${location.name}
+
+Around **${hourFormatted}** ${isTomorrow ? "tomorrow" : "today"}, conditions in **${location.name}** are projected to be **${matchedHour.conditionText}** with a temperature of **${hTemp}** (feels like **${hFeels}**).
+
+* 🌡️ **Expected Temperature:** **${hTemp}** (Feels like ${hFeels})
+* 🌧️ **Precipitation Probability:** **${hRain}%**
+* 💧 **Relative Humidity:** ${matchedHour.humidity}%
+* 💨 **Wind Speed:** ${Math.round(matchedHour.windSpeed)} km/h
+* ☁️ **Cloud Cover:** ${matchedHour.cloudCover}%
+
+> 💡 **Advisory for ${hourFormatted}:** ${
+        hRain > 50
+          ? `High probability of rainfall around ${hourFormatted}. Carrying an umbrella or rain poncho is strongly advised.`
+          : matchedHour.temperature > 35
+          ? `Elevated thermal index expected. Stay hydrated and avoid strenuous outdoor exercise around ${hourFormatted}.`
+          : `Stable and comfortable weather envelope expected around ${hourFormatted}. Great for travel or outdoor plans.`
+      }`;
+    }
+
+    // 2. UV Index Danger Query (e.g., "Is UV index dangerous right now?")
+    if (qLower.includes("uv") || qLower.includes("sunscreen") || qLower.includes("solar radiation")) {
+      const uv = current.uvIndex;
+      let category = "Low";
+      let isDangerous = false;
+      let advice = "";
+
+      if (uv >= 11) {
+        category = "Extreme";
+        isDangerous = true;
+        advice = "Hazardous solar radiation. Skin damage occurs in under 10 minutes without SPF 50+ protection. Avoid midday sun.";
+      } else if (uv >= 8) {
+        category = "Very High";
+        isDangerous = true;
+        advice = "High risk of harm from unprotected sun exposure. Wear SPF 30+ sunscreen, UV-blocking sunglasses, and protective hat.";
+      } else if (uv >= 6) {
+        category = "High";
+        isDangerous = true;
+        advice = "UV index is elevated. Seek shade during peak midday hours (11:00 AM – 4:00 PM) and apply broad-spectrum sunscreen.";
+      } else if (uv >= 3) {
+        category = "Moderate";
+        isDangerous = false;
+        advice = "Moderate solar radiation. Sunglasses and light sun lotion recommended if staying outdoors for extended periods.";
+      } else {
+        category = "Low";
+        isDangerous = false;
+        advice = "Minimal solar radiation risk. You can safely stay outdoors with standard precautions.";
+      }
+
+      return `### ☀️ UV Index & Sun Protection Advisory: ${location.name}
+
+${isDangerous ? `⚠️ **YES, UV INDEX IS ELEVATED & POTENTIALLY DANGEROUS!**` : `✅ **NO, UV Index is currently at a SAFE level.**`}
+
+* ☀️ **Current UV Index:** **${uv}** (${category})
+* 🌡️ **Ambient Temperature:** ${formatTemp(current.temperature, unit)} (Feels like ${formatTemp(current.feelsLike, unit)})
+* ☁️ **Cloud Cover:** ${current.cloudCover}% (Clouds only filter ~20% of UV rays)
+
+> 🛡️ **Dermatological Recommendation:** ${advice}`;
+    }
+
+    // 3. Direct Temperature Query (e.g., "What is the temperature in Jetpur?")
+    if (
+      (qLower.includes("temperature") || qLower.includes("temp") || qLower.includes("how hot") || qLower.includes("how cold")) &&
+      !qLower.includes("cricket")
+    ) {
+      return `### 🌡️ Temperature in ${location.name}
+
+The current temperature in **${location.name}** is **${formatTemp(current.temperature, unit)}** (feels like **${formatTemp(current.feelsLike, unit)}**).
+
+* 🔺 **Today's High:** **${formatTemp(targetDay.tempMax, unit)}**
+* 🔻 **Overnight Low:** **${formatTemp(targetDay.tempMin, unit)}**
+* 💧 **Relative Humidity:** ${current.humidity}% | Dew Point: ${formatTemp(current.dewPoint, unit)}
+* 💨 **Wind Speed:** ${formatWindSpeed(current.windSpeed)} with gusts up to ${formatWindSpeed(current.windGusts)}
+
+Current atmospheric conditions are **${current.conditionText.toLowerCase()}**.`;
+    }
+
+    // 4. Rain & Umbrella Query (e.g., "Will it rain in Rajkot today?", "Should I carry an umbrella?")
+    if (qLower.includes("rain") || qLower.includes("umbrella") || qLower.includes("precipitation") || qLower.includes("shower")) {
+      const willRain = rainProb >= 40 || current.precipitation > 0;
+      const umbrellaDirective = willRain
+        ? `☔ **YES, carry an umbrella!** There is a **${rainProb}% chance of rain** ${isTomorrow ? "tomorrow" : "today"} in ${location.name}.`
+        : `☀️ **NO umbrella needed.** Rain probability is low (**${rainProb}%**) in ${location.name}.`;
+
+      return `### 🌧️ Rain & Umbrella Forecast: ${location.name}
+
+${umbrellaDirective}
+
+* 🌡️ **Temperature:** ${tempText}
+* 🌧️ **Rain Probability:** **${rainProb}%** (${targetDay.conditionText})
+* 💧 **Current Humidity:** ${current.humidity}%
+* ☁️ **Cloud Cover:** ${current.cloudCover}%
+* 💨 **Wind:** ${targetDay.windSpeedMax} km/h
+
+> 💡 **Precipitation Outlook:** ${
+        rainProb > 60
+          ? "Localized convective downpours or thunderstorm showers are likely. Keep waterproof gear ready."
+          : rainProb > 30
+          ? "Passing showers possible during evening or afternoon intervals. Keeping a compact umbrella is a good precaution."
+          : "Predominantly dry conditions with negligible rain risk."
+      }`;
+    }
+
+    // 5. Tomorrow's Forecast (e.g., "What's the weather tomorrow in Jetpur?")
+    if (isTomorrow || qLower.includes("tomorrow")) {
+      const tomorrow = daily[1] || daily[0];
+      return `### 📅 Tomorrow's Weather Forecast for ${location.name}
+
+Tomorrow in **${location.name}**, expect **${tomorrow.conditionText}** with temperatures reaching a high of **${formatTemp(tomorrow.tempMax, unit)}** and an overnight low of **${formatTemp(tomorrow.tempMin, unit)}**.
+
+* 🌡️ **Temperature Range:** High of **${formatTemp(tomorrow.tempMax, unit)}** / Low of **${formatTemp(tomorrow.tempMin, unit)}**
+* 🌧️ **Precipitation Likelihood:** **${tomorrow.precipitationProb}%** (${tomorrow.precipitationProb > 40 ? "Rain showers likely" : "Mostly dry"})
+* 💨 **Peak Wind Gusts:** ${tomorrow.windSpeedMax} km/h
+* 🍃 **Air Quality Forecast:** ${aqi.category} category (~${aqi.aqi} AQI)
+
+${recommendation.reasoning}`;
+    }
+
+    // 6. 7-Day Extended Forecast (e.g., "7-day weather forecast for Ahmedabad")
+    if (qLower.includes("7-day") || qLower.includes("7 day") || qLower.includes("week forecast") || qLower.includes("weekly") || qLower.includes("extended")) {
+      return `### 📅 7-Day Extended Forecast for ${location.name}
+
+Here is the projected meteorological outlook for **${location.name}** over the next 7 days:
+
+| Day | Date | Condition | High / Low | Rain % |
+| :--- | :--- | :--- | :--- | :--- |
+${daily.slice(0, 7).map((d) => `| **${d.dayName}** | ${d.date.slice(5)} | ${d.conditionText} | **${formatTemp(d.tempMax, unit)}** / ${formatTemp(d.tempMin, unit)} | 🌧️ ${d.precipitationProb}% |`).join("\n")}
+
+> 📈 **Week Trend:** Temperatures will peak at ${formatTemp(Math.max(...daily.slice(0, 7).map((d) => d.tempMax)), unit)} with ${daily.some((d) => d.precipitationProb > 40) ? "scattered shower opportunities" : "predominantly clear skies"}.`;
+    }
+
+    // 7. Cricket & Sports Playability
     if (domain === "cricket") {
       const specificTimeText = temporal.specificHour ? `around ${temporal.specificHour > 12 ? temporal.specificHour - 12 + " PM" : temporal.specificHour + " AM"}` : "tomorrow evening";
       return `### 🏏 Match Analysis: ${location.name} (${isTomorrow ? "Tomorrow" : "Today"} ${specificTimeText})
@@ -626,30 +921,7 @@ ${recommendation.reasoning}
 > 💡 **Recommendation:** ${recommendation.bestWindow ? `If you are planning to play, consider scheduling during the optimal window: **${recommendation.bestWindow}**.` : "Keep a backup plan in case of localized drizzle."}`;
     }
 
-    if (query.toLowerCase().includes("rain") || query.toLowerCase().includes("umbrella")) {
-      return `### 🌧️ Rain & Precipitation Forecast for ${location.name}
-
-${rainProb > 40 ? `Yes, there is a **notable chance of rain (${rainProb}%)** ${isTomorrow ? "tomorrow" : "today"} in ${location.name}. Carrying an umbrella or waterproof rainwear is strongly recommended.` : `Rain probability is low (**${rainProb}%**) in ${location.name}. You likely will not need an umbrella for general outdoor activities.`}
-
-* 🌡️ **Temperature:** ${tempText}
-* 🌧️ **Rain Chance:** ${rainProb}% (${targetDay.conditionText})
-* 💧 **Humidity:** ${current.humidity}%
-* 💨 **Wind:** ${targetDay.windSpeedMax} km/h
-
-Check the hourly chart below for the exact time window of expected precipitation.`;
-    }
-
-    if (query.toLowerCase().includes("7-day") || query.toLowerCase().includes("week")) {
-      return `### 📅 7-Day Extended Forecast for ${location.name}
-
-Here is the projected meteorological outlook for ${location.name} over the next 7 days:
-
-${daily.slice(0, 7).map((d) => `* **${d.dayName} (${d.date.slice(5)}):** ${d.conditionText} — High: **${formatTemp(d.tempMax, unit)}**, Low: **${formatTemp(d.tempMin, unit)}** | 🌧️ ${d.precipitationProb}% rain`).join("\n")}
-
-Overall trend shows ${daily[0].tempMax > daily[4]?.tempMax ? "gradual cooling" : "stable conditions"} across the week.`;
-    }
-
-    if (query.toLowerCase().includes("climate") || query.toLowerCase().includes("change")) {
+    if (qLower.includes("climate") || qLower.includes("change")) {
       return `### 🌍 Climate Trends & Historical Shift for ${location.name}
 
 Over the past 15–20 years, meteorological data records for the ${location.name} region indicate:

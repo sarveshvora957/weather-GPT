@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { useWeatherSettings } from "@/components/weather-context";
 import { WeatherService, POPULAR_LOCATIONS } from "@/lib/weather-service";
 import {
@@ -26,6 +27,7 @@ import {
   Calendar,
   Clock,
   Plus,
+  Map,
 } from "lucide-react";
 
 export default function WeatherGPTApp() {
@@ -164,9 +166,23 @@ export default function WeatherGPTApp() {
           </div>
 
           <div className="flex md:hidden items-center gap-2">
+            <Link
+              href="/chat"
+              className="p-2 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30"
+              title="AI Weather Agent"
+            >
+              <Bot className="w-4 h-4" />
+            </Link>
+            <Link
+              href="/map"
+              className="p-2 rounded-full bg-white/10 text-sky-300 border border-white/10"
+              title="Weather Map"
+            >
+              <Map className="w-4 h-4" />
+            </Link>
             <button
               onClick={toggleUnit}
-              className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-sky-300"
+              className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-sky-300"
             >
               °{unit}
             </button>
@@ -188,8 +204,26 @@ export default function WeatherGPTApp() {
           />
         </div>
 
-        {/* Right Desktop Controls */}
-        <div className="hidden md:flex items-center gap-3">
+        {/* Right Desktop Controls & Primary Feature Links */}
+        <div className="hidden md:flex items-center gap-2.5">
+          <Link
+            href="/chat"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-sky-500 to-brand-500 hover:from-sky-400 hover:to-brand-400 text-white font-bold text-xs shadow-neon-cyan transition-all active:scale-95"
+            title="Open AI Weather Agent"
+          >
+            <Bot className="w-3.5 h-3.5" />
+            <span>AI Weather Agent</span>
+          </Link>
+
+          <Link
+            href="/map"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-sky-200 hover:text-white font-semibold text-xs transition-all active:scale-95"
+            title="Open Real-Time Interactive Weather Map"
+          >
+            <Map className="w-3.5 h-3.5 text-sky-400" />
+            <span>Weather Map</span>
+          </Link>
+
           <button
             onClick={() => setCurrentLocation({ ...currentLocation })}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs text-blue-200 transition-colors"

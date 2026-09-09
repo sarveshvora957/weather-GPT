@@ -158,6 +158,7 @@ export interface AIChatMessage {
   alerts?: WeatherAlert[];
   suggestedQuestions?: string[];
   isDemo?: boolean;
+  comparisonData?: ComparisonData;
 }
 
 export interface ComparisonData {
