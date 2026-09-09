@@ -9,20 +9,23 @@ import {
   DailyForecastItem,
   LocationData,
 } from "@/types/weather";
-import { WeatherTodayView } from "@/components/weather-today-view";
-import { WeatherWeekView } from "@/components/weather-week-view";
-import { WeatherSavedView } from "@/components/weather-saved-view";
+import { Weather3DIcon } from "@/components/weather-3d-icon";
 import { WeatherAIView } from "@/components/weather-ai-view";
-import { BottomNavBar, WeatherTab } from "@/components/bottom-nav-bar";
 import { LocationSearch } from "@/components/location-search";
+import { LocationSearchBar } from "@/components/location-search-bar";
+import { convertTemp } from "@/lib/utils";
 import {
-  Smartphone,
-  Layers,
-  Search,
-  Sparkles,
   MapPin,
+  Search,
   RefreshCw,
+  Droplets,
   ExternalLink,
+  Bot,
+  Sparkles,
+  Bookmark,
+  Calendar,
+  Clock,
+  Plus,
 } from "lucide-react";
 
 export default function WeatherGPTApp() {
@@ -32,16 +35,8 @@ export default function WeatherGPTApp() {
   const [hourly, setHourly] = useState<HourlyForecastItem[]>([]);
   const [daily, setDaily] = useState<DailyForecastItem[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Tab state for Single Phone mode and individual phone mockups
-  const [activeTab, setActiveTab] = useState<WeatherTab>("today");
-  const [phone1Tab, setPhone1Tab] = useState<WeatherTab>("today");
-  const [phone2Tab, setPhone2Tab] = useState<WeatherTab>("week");
-  const [phone3Tab, setPhone3Tab] = useState<WeatherTab>("saved");
-
-  // View mode on desktop: "showcase" (3 phones side-by-side) or "single" (focused phone)
-  const [viewMode, setViewMode] = useState<"showcase" | "single">("showcase");
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<string>("");
 
   // Saved locations state
   const [savedLocations, setSavedLocations] = useState<LocationData[]>([]);
@@ -63,6 +58,9 @@ export default function WeatherGPTApp() {
           setCurrentWeather(full.current);
           setHourly(full.hourly);
           setDaily(full.daily);
+          setLastRefreshed(
+            new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          );
         }
       } catch (err) {
         console.error("Failed to load weather data:", err);
@@ -107,184 +105,425 @@ export default function WeatherGPTApp() {
     loadSaved();
   }, []);
 
-  const handleSelectLocation = (loc: LocationData) => {
-    setCurrentLocation(loc);
-    setSearchModalOpen(false);
-    setActiveTab("today");
-    setPhone1Tab("today");
-    setPhone2Tab("week");
-  };
-
-  // Render view for a specific tab inside a phone container
-  const renderTabContent = (
-    tab: WeatherTab,
-    onChangeTab: (t: WeatherTab) => void
-  ) => {
-    if (loading || !currentWeather) {
-      return (
-        <div className="flex flex-col items-center justify-center h-full p-8 text-center text-blue-200">
-          <div className="w-9 h-9 border-3 border-sky-400 border-t-transparent rounded-full animate-spin mb-4" />
-          <span className="text-sm font-medium">Fetching meteorological telemetry...</span>
-          <span className="text-xs text-blue-300/60 mt-1 font-mono">Open-Meteo API</span>
-        </div>
-      );
-    }
-
-    switch (tab) {
-      case "today":
-        return (
-          <WeatherTodayView
-            location={currentLocation}
-            current={currentWeather}
-            todayDaily={daily[0]}
-            hourly={hourly}
-            unit={unit}
-            onToggleUnit={toggleUnit}
-            onOpenSearch={() => setSearchModalOpen(true)}
-          />
-        );
-      case "week":
-        return (
-          <WeatherWeekView
-            location={currentLocation}
-            daily={daily}
-            unit={unit}
-            onToggleUnit={toggleUnit}
-            onOpenSearch={() => setSearchModalOpen(true)}
-          />
-        );
-      case "saved":
-        return (
-          <WeatherSavedView
-            savedLocations={savedLocations}
-            weatherMap={weatherMap}
-            unit={unit}
-            onSelectLocation={handleSelectLocation}
-            onBack={() => onChangeTab("today")}
-            onOpenSearch={() => setSearchModalOpen(true)}
-          />
-        );
-      case "ai":
-        return (
-          <WeatherAIView
-            location={currentLocation}
-            current={currentWeather}
-            unit={unit}
-            onBack={() => onChangeTab("today")}
-          />
-        );
-      default:
-        return null;
+  const formatTimeStr = (isoString?: string) => {
+    if (!isoString) return "--:--";
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+    } catch {
+      return isoString;
     }
   };
+
+  const getDayName = (dateStr: string, index: number) => {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString("en-US", { weekday: "long" });
+    } catch {
+      const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+      return days[index % 7];
+    }
+  };
+
+  const displayTemp = currentWeather ? convertTemp(currentWeather.temperature, unit) : 24;
+  const displayFeelsLike = currentWeather ? convertTemp(currentWeather.feelsLike, unit) : 28;
+  const rainChance =
+    daily[0]?.precipitationProb ??
+    (currentWeather && currentWeather.precipitation > 0 ? 90 : 15);
+
+  const tomorrow = daily[1] || daily[0];
+  const tomorrowMax = tomorrow ? convertTemp(tomorrow.tempMax, unit) : 28;
+  const tomorrowMin = tomorrow ? convertTemp(tomorrow.tempMin, unit) : 23;
+  const tomorrowRain = tomorrow?.precipitationProb ?? 80;
+  const tomorrowCondition = tomorrow?.conditionText || "Cloudy / Rainy";
+
+  const defaultPresets = [
+    { name: "New York", country: "United States", lat: 40.7128, lon: -74.006, high: 28, low: 22, cond: "Cloudy", isNight: true },
+    { name: "Tokyo", country: "Japan", lat: 35.6762, lon: 139.6503, high: 30, low: 24, cond: "Thunderstorm", isNight: false },
+    { name: "Vancouver", country: "Canada", lat: 49.2827, lon: -123.1207, high: 20, low: 12, cond: "Light Rain", isNight: false },
+    { name: "Agartala", country: "Tripura, India", lat: 23.8315, lon: 91.2868, high: 31, low: 25, cond: "Light Rain", isNight: false },
+  ];
 
   return (
-    <div className="min-h-screen canvas-backdrop flex flex-col items-center justify-between text-white selection:bg-sky-500 selection:text-white">
-      {/* 1. Desktop Top Control Bar (Clean & Unobtrusive) */}
-      <header className="w-full max-w-6xl px-4 pt-4 pb-2 flex flex-wrap items-center justify-between gap-3 z-20">
-        {/* Brand */}
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-xl bg-sky-500 flex items-center justify-center text-navy-950 font-black text-xs shadow-md">
-            W
+    <div className="min-h-screen flex flex-col justify-between text-white selection:bg-sky-500 selection:text-white">
+      {/* 1. Header Bar: Brand, Location Search & Quick Pills, Unit Toggle */}
+      <header className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-3 flex flex-col md:flex-row items-center justify-between gap-4 z-20">
+        <div className="flex items-center justify-between w-full md:w-auto gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-2xl bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-navy-950 font-black text-sm shadow-md">
+              W
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-white tracking-tight flex items-center gap-1.5">
+                <span>WeatherGPT</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">
+                  Live
+                </span>
+              </h1>
+            </div>
           </div>
-          <div>
-            <h1 className="text-sm sm:text-base font-bold text-navy-950 tracking-tight flex items-center gap-1.5">
-              <span>WeatherGPT</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-white/60 text-navy-900 border border-navy-900/10">
-                Live
-              </span>
-            </h1>
+
+          <div className="flex md:hidden items-center gap-2">
+            <button
+              onClick={toggleUnit}
+              className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-sky-300"
+            >
+              °{unit}
+            </button>
+            <button
+              onClick={() => setSearchModalOpen(true)}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/15 text-slate-200"
+            >
+              <Search className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        {/* Center: Active Location Indicator */}
-        <button
-          onClick={() => setSearchModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/70 hover:bg-white/90 text-navy-900 text-xs font-semibold shadow-sm transition-all border border-navy-900/10"
-        >
-          <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-          <span>
-            {currentLocation.name}
-            {currentLocation.admin1 ? `, ${currentLocation.admin1}` : ""}
-          </span>
-          <Search className="w-3 h-3 text-slate-500 ml-1" />
-        </button>
+        {/* Center: Prominent Location Search Input */}
+        <div className="w-full md:max-w-md">
+          <LocationSearchBar
+            currentLocation={currentLocation}
+            onSelectLocation={(loc) => setCurrentLocation(loc)}
+            isLoading={loading}
+          />
+        </div>
 
-        {/* Right Controls: Mode Toggle, °C/°F, Refresh */}
-        <div className="flex items-center gap-2">
-          {/* Toggle between 3-Phone Showcase & Single Phone on Desktop */}
-          <div className="hidden lg:flex items-center p-0.5 rounded-full bg-navy-950/15 border border-navy-950/10 text-xs font-medium">
-            <button
-              onClick={() => setViewMode("showcase")}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full transition-all ${
-                viewMode === "showcase"
-                  ? "bg-white text-navy-950 shadow-sm font-bold"
-                  : "text-navy-900/80 hover:text-navy-950"
-              }`}
-            >
-              <Layers className="w-3 h-3" />
-              <span>3-Screen Showcase</span>
-            </button>
+        {/* Right Desktop Controls */}
+        <div className="hidden md:flex items-center gap-3">
+          <button
+            onClick={() => setCurrentLocation({ ...currentLocation })}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs text-blue-200 transition-colors"
+            title="Refresh weather"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-sky-400" : ""}`} />
+            <span className="font-mono text-[11px]">{lastRefreshed ? `Sync ${lastRefreshed}` : "Sync"}</span>
+          </button>
 
-            <button
-              onClick={() => setViewMode("single")}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full transition-all ${
-                viewMode === "single"
-                  ? "bg-white text-navy-950 shadow-sm font-bold"
-                  : "text-navy-900/80 hover:text-navy-950"
-              }`}
-            >
-              <Smartphone className="w-3 h-3" />
-              <span>Single Phone</span>
-            </button>
-          </div>
-
-          {/* Unit Switcher */}
           <button
             onClick={toggleUnit}
-            className="px-3 py-1.5 rounded-full bg-white/70 hover:bg-white/90 text-navy-950 font-bold text-xs shadow-sm border border-navy-900/10 transition-colors"
+            className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-sm font-bold text-sky-300 shadow-sm transition-all active:scale-95"
+            title="Toggle °C / °F"
           >
             °{unit}
           </button>
         </div>
       </header>
 
-      {/* 2. Main Visual Canvas */}
-      <main className="w-full flex-1 flex items-center justify-center p-2 sm:p-6 lg:p-8">
-        {/* VIEW 1: DESKTOP 3-SCREEN SHOWCASE (Matches user's reference image 100%) */}
-        {viewMode === "showcase" ? (
-          <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-8 xl:gap-10 py-4">
-            {/* Phone 1: Screen 1 (Today / Current Weather & Hourly) */}
-            <div className="phone-viewport w-[340px] sm:w-[360px] h-[680px] sm:h-[720px] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-300 hover:shadow-[0_30px_70px_-10px_rgba(6,17,39,0.8)]">
-              <div className="flex-1 overflow-hidden">
-                {renderTabContent(phone1Tab, setPhone1Tab)}
-              </div>
-              <BottomNavBar activeTab={phone1Tab} onChangeTab={setPhone1Tab} />
-            </div>
-
-            {/* Phone 2: Screen 2 (This Week / 7-Day Forecast & Tomorrow Highlight) */}
-            <div className="phone-viewport w-[340px] sm:w-[360px] h-[680px] sm:h-[720px] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-300 hover:shadow-[0_30px_70px_-10px_rgba(6,17,39,0.8)]">
-              <div className="flex-1 overflow-hidden">
-                {renderTabContent(phone2Tab, setPhone2Tab)}
-              </div>
-              <BottomNavBar activeTab={phone2Tab} onChangeTab={setPhone2Tab} />
-            </div>
-
-            {/* Phone 3: Screen 3 (Saved Locations / Watchlist Cards) */}
-            <div className="phone-viewport w-[340px] sm:w-[360px] h-[680px] sm:h-[720px] flex flex-col justify-between overflow-hidden shadow-2xl transition-all duration-300 hover:shadow-[0_30px_70px_-10px_rgba(6,17,39,0.8)]">
-              <div className="flex-1 overflow-hidden">
-                {renderTabContent(phone3Tab, setPhone3Tab)}
-              </div>
-              <BottomNavBar activeTab={phone3Tab} onChangeTab={setPhone3Tab} />
-            </div>
+      {/* 2. Main Content Grid (Responsive for Laptop and Phone) */}
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4">
+        {loading || !currentWeather ? (
+          <div className="flex flex-col items-center justify-center min-h-[500px] text-blue-200">
+            <div className="w-12 h-12 border-3 border-sky-400 border-t-transparent rounded-full animate-spin mb-4" />
+            <span className="text-base font-medium">Fetching real-time meteorological observations...</span>
+            <span className="text-xs text-blue-300/60 mt-1 font-mono">Open-Meteo High-Resolution Model</span>
           </div>
         ) : (
-          /* VIEW 2: SINGLE FOCUSED PHONE (Interactive 4-tab mobile view) */
-          <div className="phone-viewport w-full max-w-[370px] sm:max-w-[390px] h-[100dvh] sm:h-[740px] flex flex-col justify-between overflow-hidden shadow-2xl">
-            <div className="flex-1 overflow-hidden">
-              {renderTabContent(activeTab, setActiveTab)}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* ================= LEFT COLUMN: TODAY HERO + 6-METRIC CARD + HOURLY STRIP + AI ================= */}
+            <div className="lg:col-span-7 space-y-6">
+              {/* SCREEN 1 HERO CARD: Location, 3D Icon, Condition, Large Temp, Feels Like */}
+              <div className="royal-card p-6 sm:p-8 flex flex-col items-center justify-center text-center relative overflow-hidden shadow-2xl">
+                {/* Location Top Bar inside Card */}
+                <div className="w-full flex items-center justify-between gap-2 pb-2 mb-2">
+                  <div className="flex items-center gap-1.5 text-left">
+                    <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="text-sm sm:text-base font-semibold text-white">
+                      {currentLocation.name}
+                      {currentLocation.admin1 ? `, ${currentLocation.admin1}` : ""}
+                    </span>
+                  </div>
+
+                  <span className="text-[11px] font-mono text-blue-200/60 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-sky-400" />
+                    {lastRefreshed ? `Updated ${lastRefreshed}` : "Live Data"}
+                  </span>
+                </div>
+
+                {/* 3D Weather Illustration */}
+                <div className="my-2">
+                  <Weather3DIcon
+                    condition={currentWeather.conditionText}
+                    isNight={!currentWeather.isDay}
+                    size="xl"
+                  />
+                </div>
+
+                {/* Weather Condition */}
+                <h2 className="text-lg sm:text-xl font-medium text-blue-100 tracking-wide mt-1">
+                  {currentWeather.conditionText}
+                </h2>
+
+                {/* Large Temperature Typography */}
+                <div className="flex items-start justify-center mt-2">
+                  <span className="text-7xl sm:text-8xl md:text-9xl font-bold tracking-tight text-white leading-none">
+                    {displayTemp}
+                  </span>
+                  <span className="text-3xl sm:text-4xl md:text-5xl font-light text-sky-200 ml-1 mt-2">°</span>
+                </div>
+
+                {/* Feels Like Text */}
+                <p className="text-sm text-blue-200/80 mt-2 font-medium">
+                  Feels like {displayFeelsLike}°
+                </p>
+
+                {/* 6-METRIC PARAMETERS CARD (2 rows x 3 columns matching reference) */}
+                <div className="w-full mt-6 pt-6 border-t border-white/10">
+                  <div className="grid grid-cols-3 gap-y-4 gap-x-2 text-center">
+                    {/* Row 1 */}
+                    <div>
+                      <span className="text-xs text-blue-200/70 block">Wind speed</span>
+                      <strong className="text-sm sm:text-base font-semibold text-white mt-0.5 block">
+                        {Math.round(currentWeather.windSpeed)} km/h
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span className="text-xs text-blue-200/70 block">Humidity</span>
+                      <strong className="text-sm sm:text-base font-semibold text-white mt-0.5 block">
+                        {currentWeather.humidity}%
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span className="text-xs text-blue-200/70 block">Chance of rain</span>
+                      <strong className="text-sm sm:text-base font-semibold text-white mt-0.5 block">
+                        {rainChance}%
+                      </strong>
+                    </div>
+
+                    {/* Row 2 */}
+                    <div className="pt-3 border-t border-white/5">
+                      <span className="text-xs text-blue-200/70 block">Sunrise</span>
+                      <strong className="text-sm sm:text-base font-semibold text-white mt-0.5 block">
+                        {formatTimeStr(currentWeather.sunrise)}
+                      </strong>
+                    </div>
+
+                    <div className="pt-3 border-t border-white/5">
+                      <span className="text-xs text-blue-200/70 block">Sunset</span>
+                      <strong className="text-sm sm:text-base font-semibold text-white mt-0.5 block">
+                        {formatTimeStr(currentWeather.sunset)}
+                      </strong>
+                    </div>
+
+                    <div className="pt-3 border-t border-white/5">
+                      <span className="text-xs text-blue-200/70 block">Pressure</span>
+                      <strong className="text-sm sm:text-base font-semibold text-white mt-0.5 block">
+                        {Math.round(currentWeather.pressure)} hPa
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 24-HOUR HOURLY FORECAST STRIP */}
+              <div className="royal-card p-5 sm:p-6 shadow-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-sky-400" />
+                    <span>Hourly Forecast</span>
+                  </h3>
+                  <span className="text-xs text-blue-200/70 font-mono">Next 24 Hours</span>
+                </div>
+
+                <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
+                  {hourly.slice(0, 16).map((item, index) => {
+                    const isFirst = index === 0;
+                    const hTemp = convertTemp(item.temperature, unit);
+                    const timeLabel = isFirst
+                      ? "Now"
+                      : new Date(item.time).toLocaleTimeString([], {
+                          hour: "numeric",
+                          minute: "2-digit",
+                          hour12: true,
+                        });
+
+                    if (isFirst) {
+                      return (
+                        <div
+                          key={item.time}
+                          className="sky-highlight-card shrink-0 min-w-[80px] p-3.5 flex flex-col items-center justify-between text-center"
+                        >
+                          <span className="text-xs font-medium text-white">{timeLabel}</span>
+                          <div className="my-2">
+                            <Weather3DIcon condition={item.conditionText} size="sm" />
+                          </div>
+                          <span className="text-base font-bold text-white">{hTemp}°</span>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={item.time}
+                        className="royal-card-interactive shrink-0 min-w-[80px] p-3.5 flex flex-col items-center justify-between text-center"
+                      >
+                        <span className="text-xs text-blue-200/80">{timeLabel}</span>
+                        <div className="my-2">
+                          <Weather3DIcon condition={item.conditionText} size="sm" />
+                        </div>
+                        <span className="text-base font-bold text-white">{hTemp}°</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* WEATHERGPT CONVERSATIONAL AI ASSISTANT */}
+              <div className="royal-card p-6 shadow-xl h-[480px]">
+                <WeatherAIView
+                  location={currentLocation}
+                  current={currentWeather}
+                  unit={unit}
+                  onBack={() => {}}
+                />
+              </div>
             </div>
-            <BottomNavBar activeTab={activeTab} onChangeTab={setActiveTab} />
+
+            {/* ================= RIGHT COLUMN: TOMORROW HIGHLIGHT + THIS WEEK FORECAST + SAVED CITIES ================= */}
+            <div className="lg:col-span-5 space-y-6">
+              {/* TOMORROW HIGHLIGHT CARD (Sky Blue gradient matching reference) */}
+              <div className="sky-highlight-card p-6 shadow-xl flex items-center justify-between">
+                <div className="space-y-1.5">
+                  <span className="text-xs sm:text-sm font-semibold text-white/90 block">
+                    Tomorrow
+                  </span>
+                  <div className="flex items-baseline gap-2.5">
+                    <span className="text-4xl font-bold text-white">
+                      {tomorrowMax}°
+                    </span>
+                    <span className="text-xl font-light text-white/80">
+                      {tomorrowMin}°
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-white/90 pt-1">
+                    <Droplets className="w-3.5 h-3.5 fill-white text-white" />
+                    <span>{tomorrowRain}% chance of rain</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center text-center">
+                  <Weather3DIcon condition={tomorrowCondition} size="lg" />
+                  <span className="text-xs font-semibold text-white mt-1 max-w-[110px] truncate">
+                    {tomorrowCondition}
+                  </span>
+                </div>
+              </div>
+
+              {/* THIS WEEK / 7-DAY EXTENDED FORECAST LIST (Matching reference) */}
+              <div className="royal-card p-6 shadow-xl space-y-4">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-sky-400" />
+                    <span>This Week</span>
+                  </h3>
+                  <span className="text-xs text-blue-200/70 font-mono">7-Day Forecast</span>
+                </div>
+
+                <div className="space-y-3.5">
+                  {daily.slice(1, 8).map((day, index) => {
+                    const max = convertTemp(day.tempMax, unit);
+                    const min = convertTemp(day.tempMin, unit);
+                    const dayName = getDayName(day.date, index + 1);
+                    const rain = day.precipitationProb;
+
+                    return (
+                      <div
+                        key={day.date}
+                        className="flex items-center justify-between py-1 px-1 hover:bg-white/5 rounded-xl transition-colors"
+                      >
+                        {/* Day Name */}
+                        <span className="text-sm font-medium text-slate-200 w-28 truncate">
+                          {dayName}
+                        </span>
+
+                        {/* Temperatures */}
+                        <div className="flex items-center gap-2 font-mono text-sm font-semibold">
+                          <span className="text-white">{max}°</span>
+                          <span className="text-blue-200/70 font-normal">{min}°</span>
+                        </div>
+
+                        {/* Rain Chance & 3D Weather Icon */}
+                        <div className="flex items-center gap-2 justify-end w-24">
+                          {rain !== undefined && rain > 20 && (
+                            <span className="text-xs font-medium text-sky-400 font-mono">
+                              {rain}%
+                            </span>
+                          )}
+                          <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                            <Weather3DIcon condition={day.conditionText} size="sm" />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* SAVED LOCATIONS / WATCHLIST (Matching reference) */}
+              <div className="royal-card p-6 shadow-xl space-y-4">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Bookmark className="w-4 h-4 text-sky-400" />
+                    <span>Saved Locations</span>
+                  </h3>
+
+                  <button
+                    onClick={() => setSearchModalOpen(true)}
+                    className="flex items-center gap-1 text-xs text-sky-300 hover:text-white font-medium transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add City</span>
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {defaultPresets.map((loc) => {
+                    const high = convertTemp(loc.high, unit);
+                    const low = convertTemp(loc.low, unit);
+
+                    return (
+                      <div
+                        key={loc.name}
+                        onClick={() =>
+                          setCurrentLocation({
+                            name: loc.name,
+                            country: loc.country,
+                            latitude: loc.lat,
+                            longitude: loc.lon,
+                          })
+                        }
+                        className="royal-card-interactive p-4 flex items-center justify-between cursor-pointer group"
+                      >
+                        <div className="space-y-0.5">
+                          <h4 className="text-sm font-bold text-white group-hover:text-sky-300 transition-colors">
+                            {loc.name}
+                          </h4>
+                          <span className="text-[11px] text-blue-200/70 block">
+                            {loc.country}
+                          </span>
+                          <div className="flex items-baseline gap-2 pt-1 font-mono">
+                            <span className="text-base font-bold text-white">{high}°</span>
+                            <span className="text-xs text-blue-200/70">{low}°</span>
+                          </div>
+                          <span className="text-xs text-blue-200/80 block">
+                            {loc.cond}
+                          </span>
+                        </div>
+
+                        <div className="shrink-0">
+                          <Weather3DIcon
+                            condition={loc.cond}
+                            isNight={loc.isNight}
+                            size="md"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </main>
@@ -293,17 +532,20 @@ export default function WeatherGPTApp() {
       <LocationSearch
         isOpen={searchModalOpen}
         onClose={() => setSearchModalOpen(false)}
-        onSelectLocation={handleSelectLocation}
+        onSelectLocation={(loc) => {
+          setCurrentLocation(loc);
+          setSearchModalOpen(false);
+        }}
       />
 
-      {/* 4. Subtle Footer Attribution */}
-      <footer className="w-full py-4 text-center text-[11px] text-navy-950/70 font-medium">
-        <span>WeatherGPT • Meteorological data powered by </span>
+      {/* 4. Footer */}
+      <footer className="w-full max-w-7xl mx-auto py-6 px-4 text-center text-xs text-blue-200/60 font-medium">
+        <span>WeatherGPT • Meteorological observations powered by </span>
         <a
           href="https://open-meteo.com/"
           target="_blank"
           rel="noreferrer"
-          className="font-bold underline hover:text-navy-950 inline-flex items-center gap-0.5"
+          className="font-bold underline text-sky-400 hover:text-white inline-flex items-center gap-0.5"
         >
           Open-Meteo <ExternalLink className="w-2.5 h-2.5" />
         </a>

@@ -5,7 +5,6 @@
 @layer base {
   :root {
     --background: #0d2246;
-    --canvas-bg: #83a9cf;
     --foreground: #ffffff;
     --card: rgba(255, 255, 255, 0.08);
     --card-border: rgba(255, 255, 255, 0.12);
@@ -15,27 +14,22 @@
 }
 
 body {
-  background-color: var(--background);
+  background: linear-gradient(180deg, #1b3d73 0%, #132f5d 35%, #0d2246 100%);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
-/* Phone Container Frame for Desktop Showcase & Mobile Fullscreen */
-.phone-viewport {
-  background: linear-gradient(180deg, #1d3e75 0%, #142f5d 55%, #0d2146 100%);
-  border-radius: 42px;
-  box-shadow: 0 25px 60px -15px rgba(6, 17, 39, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.12);
-}
-
-/* Royal Navy Card Styling Matching Reference Screenshot */
+/* Royal Navy Card Styling Matching Reference Aesthetic */
 .royal-card {
   background: rgba(255, 255, 255, 0.07);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
+  border-radius: 28px;
 }
 
 .royal-card-interactive {
@@ -43,28 +37,22 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
+  border-radius: 28px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .royal-card-interactive:hover {
   background: rgba(255, 255, 255, 0.11);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.22);
   transform: translateY(-2px);
 }
 
 /* Vibrant Sky-Blue Highlight Card (Tomorrow card & active hourly pill) */
 .sky-highlight-card {
   background: linear-gradient(135deg, #539bf5 0%, #3b82f6 60%, #2f73e6 100%);
-  box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.35);
-  border-radius: 24px;
+  box-shadow: 0 12px 28px -6px rgba(59, 130, 246, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.35);
+  border-radius: 28px;
   color: #ffffff;
-}
-
-/* Desktop Canvas Backdrop */
-.canvas-backdrop {
-  background: #84a9cf;
-  background-image: radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.25) 0%, rgba(132, 169, 207, 0) 65%);
 }
 
 /* Glassmorphic Panel fallback */
@@ -73,12 +61,13 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
 }
 
-/* Custom Sleek Scrollbar */
+/* Custom Sleek Scrollbars */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -121,7 +110,7 @@ body {
     transform: translateY(0px);
   }
   50% {
-    transform: translateY(-5px);
+    transform: translateY(-6px);
   }
 }
 
