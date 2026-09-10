@@ -135,13 +135,20 @@ export const AskAIPanel: React.FC<AskAIPanelProps> = ({
     setIsLoading(true);
 
     try {
+      const userApiKey =
+        typeof window !== "undefined"
+          ? localStorage.getItem("weathergpt_gemini_key") || undefined
+          : undefined;
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: textToSend,
+          history: messages.map((m) => ({ role: m.role, content: m.content })),
           activeLocation: currentLocation,
           isDemoMode: true,
+          userApiKey,
           unit,
         }),
       });

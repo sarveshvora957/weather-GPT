@@ -265,7 +265,7 @@ export class WeatherAI {
 
     // 1. Extract Location & Temporal parameters with conversational memory
     const extractedLocation = await this.extractLocation(trimmed, history, options.activeLocation, lang);
-    const temporalIntent = this.extractTemporalIntent(trimmed, lang);
+    const temporalIntent = this.extractTemporalIntent(trimmed, lang, history);
     const domain = this.detectDomain(trimmed, lang);
 
     // 2. Fetch real meteorological data with zero hallucination
@@ -316,9 +316,10 @@ export class WeatherAI {
       try {
         answerContent = await this.callGeminiLLM(
           prompt,
+          history,
           extractedLocation,
           current,
-          hourly.slice(0, 12),
+          hourly.slice(0, 48),
           daily.slice(0, 7),
           aqi,
           recommendation,
@@ -327,7 +328,7 @@ export class WeatherAI {
           lang
         );
       } catch (err) {
-        console.warn("Gemini API call failed, using deterministic multilingual engine:", err);
+        console.warn("Gemini API call failed, using natural deterministic multilingual engine:", err);
         answerContent = this.generateDeterministicResponse(
           domain,
           trimmed,
@@ -1130,106 +1131,95 @@ export class WeatherAI {
     const aqiCatB = this.getLocalizedAQICategory(aqiB.category, lang);
 
     if (lang === "hi") {
-      let verdict = "";
-      if (isTravel) {
-        verdict = `### ✈️ यात्रा सलाह: **${recs.betterForTravel}** चुनें\n\nआज यात्रा के लिए **${recs.betterForTravel}** अधिक अनुकूल है, क्योंकि ${
-          rainA < rainB
-            ? `यहाँ बारिश का जोखिम काफी कम है (${rainA}% बनाम ${rainB}%)`
-            : currentA.temperature < currentB.temperature
-            ? `यहाँ का तापमान अधिक आरामदायक है (${tempA} बनाम ${tempB})`
-            : `यहाँ मौसम की समग्र स्थिति अधिक स्थिर है`
-        }।`;
-      } else {
-        verdict = `### ⚖️ मौसम की तुलना: **${cityA.name} बनाम ${cityB.name}**\n\n* 🏆 **यात्रा और आउटडोर गतिविधियों के लिए श्रेष्ठ:** **${recs.betterForTravel}**\n* 🍃 **अधिक स्वच्छ वायु गुणवत्ता (AQI):** **${recs.betterAirQuality}** (${aqiA.aqi < aqiB.aqi ? aqiA.aqi : aqiB.aqi} AQI)\n* ❄️ **ठंडा गंतव्य:** **${recs.coolerClimate}** (${recs.coolerClimate === cityA.name ? tempA : tempB})`;
-      }
+      const advice = isTravel
+        ? `यदि आप आज **${cityA.name}** और **${cityB.name}** के बीच यात्रा का चुनाव कर रहे हैं, तो **${recs.betterForTravel}** अधिक अनुकूल विकल्प है। ${rainA < rainB ? `${cityA.name} में बारिश का जोखिम (${rainA}%) ${cityB.name} (${rainB}%) से काफी कम है।` : `${recs.betterForTravel} में तापमान और मौसम अधिक आरामदायक बना हुआ है।`}`
+        : `यदि आप आज **${cityA.name}** और **${cityB.name}** की तुलना करें, तो **${cityA.name}** में तापमान **${tempA}** (${condA}) है, जबकि **${cityB.name}** में **${tempB}** (${condB}) दर्ज किया गया है। ${aqiA.aqi !== aqiB.aqi ? `हवा की गुणवत्ता ${recs.betterAirQuality} में अधिक साफ़ (${Math.min(aqiA.aqi, aqiB.aqi)} AQI) है।` : ""}`;
 
-      return `${verdict}
+      return `${advice}
 
-**तुलनात्मक तालिका:**
+• **${cityA.name}**: ${tempA} (महसूस: ${feelsA}), ${condA}, बारिश: ${rainA}%, हवा: ${Math.round(currentA.windSpeed)} km/h, AQI: ${aqiA.aqi}
+• **${cityB.name}**: ${tempB} (महसूस: ${feelsB}), ${condB}, बारिश: ${rainB}%, हवा: ${Math.round(currentB.windSpeed)} km/h, AQI: ${aqiB.aqi}
 
-| पैरामीटर | ${cityA.name} | ${cityB.name} | टिप्पणी |
-| :--- | :--- | :--- | :--- |
-| 🌡️ **तापमान** | **${tempA}** (महसूस: ${feelsA}) | **${tempB}** (महसूस: ${feelsB}) | ${recs.coolerClimate} अधिक ठंडा है |
-| 🌧️ **बारिश की संभावना** | **${rainA}%** (${condA}) | **${rainB}%** (${condB}) | ${rainA <= rainB ? cityA.name : cityB.name} में बारिश का जोखिम कम है |
-| 💧 **आर्द्रता (नमी)** | ${currentA.humidity}% | ${currentB.humidity}% | ${currentA.humidity < currentB.humidity ? cityA.name : cityB.name} में नमी कम है |
-| 💨 **हवा की गति** | ${Math.round(currentA.windSpeed)} km/h | ${Math.round(currentB.windSpeed)} km/h | ${Math.abs(currentA.windSpeed - currentB.windSpeed).toFixed(1)} km/h का अंतर |
-| ☀️ **UV इंडेक्स** | ${currentA.uvIndex} | ${currentB.uvIndex} | ${currentA.uvIndex > 6 || currentB.uvIndex > 6 ? "उच्च UV" : "मध्यम"} |
-| 🍃 **वायु गुणवत्ता (AQI)** | ${aqiA.aqi} (${aqiCatA}) | ${aqiB.aqi} (${aqiCatB}) | ${recs.betterAirQuality} में स्वच्छ हवा है |
-
-> 💡 **मौसम विशेषज्ञ की राय:** ${recs.betterForTravel} आज के लिए बेहतर विकल्प है।`;
+कुल मिलाकर, आज के दिन **${recs.betterForTravel}** में मौसम अधिक आरामदायक और स्थिर रहेगा।`;
     }
 
     if (lang === "gu") {
-      let verdict = "";
-      if (isTravel) {
-        verdict = `### ✈️ મુસાફરી સલાહ: **${recs.betterForTravel}** પસંદ કરો\n\nઆજે મુસાફરી માટે **${recs.betterForTravel}** વધુ અનુકૂળ છે, કારણ કે ${
-          rainA < rainB
-            ? `ત્યાં વરસાદનું જોખમ ઘણું ઓછું છે (${rainA}% સામે ${rainB}%)`
-            : currentA.temperature < currentB.temperature
-            ? `ત્યાં તાપમાન વધુ આરામદાયક છે (${tempA} સામે ${tempB})`
-            : `ત્યાં સમગ્ર હવામાન વધુ સ્થિર છે`
-        }.`;
-      } else {
-        verdict = `### ⚖️ હવામાન સરખામણી: **${cityA.name} અને ${cityB.name}**\n\n* 🏆 **મુસાફરી અને બહારની પ્રવૃત્તિઓ માટે શ્રેષ્ઠ:** **${recs.betterForTravel}**\n* 🍃 **વધુ સ્વચ્છ હવા (AQI):** **${recs.betterAirQuality}** (${aqiA.aqi < aqiB.aqi ? aqiA.aqi : aqiB.aqi} AQI)\n* ❄️ **વધુ ઠંડું સ્થળ:** **${recs.coolerClimate}** (${recs.coolerClimate === cityA.name ? tempA : tempB})`;
-      }
+      const advice = isTravel
+        ? `જો તમે આજે **${cityA.name}** અને **${cityB.name}** વચ્ચે મુસાફરી કરવાનું વિચારી રહ્યા હો, તો **${recs.betterForTravel}** વધુ અનુકૂળ રહેશે. ${rainA < rainB ? `${cityA.name}માં વરસાદની શક્યતા (${rainA}%) ${cityB.name} (${rainB}%) કરતા ઓછી છે.` : `${recs.betterForTravel}માં હવામાન વધુ આરામદાયક છે.`}`
+        : `આજે **${cityA.name}** અને **${cityB.name}**ની સરખામણી કરીએ તો, **${cityA.name}**માં તાપમાન **${tempA}** (${condA}) છે જ્યારે **${cityB.name}**માં **${tempB}** (${condB}) છે. ${aqiA.aqi !== aqiB.aqi ? `હવાની ગુણવત્તા ${recs.betterAirQuality}માં વધુ સારી (${Math.min(aqiA.aqi, aqiB.aqi)} AQI) છે.` : ""}`;
 
-      return `${verdict}
+      return `${advice}
 
-**સરખામણી કોષ્ટક:**
+• **${cityA.name}**: ${tempA} (અનુભવાતું: ${feelsA}), ${condA}, વરસાદ: ${rainA}%, પવન: ${Math.round(currentA.windSpeed)} km/h, AQI: ${aqiA.aqi}
+• **${cityB.name}**: ${tempB} (અનુભવાતું: ${feelsB}), ${condB}, વરસાદ: ${rainB}%, પવન: ${Math.round(currentB.windSpeed)} km/h, AQI: ${aqiB.aqi}
 
-| પરિમાણ | ${cityA.name} | ${cityB.name} | તારણ / નોંધ |
-| :--- | :--- | :--- | :--- |
-| 🌡️ **તાપમાન** | **${tempA}** (અનુભવાતું: ${feelsA}) | **${tempB}** (અનુભવાતું: ${feelsB}) | ${recs.coolerClimate} વધુ ઠંડું છે |
-| 🌧️ **વરસાદની શક્યતા** | **${rainA}%** (${condA}) | **${rainB}%** (${condB}) | ${rainA <= rainB ? cityA.name : cityB.name}માં વરસાદનું જોખમ ઓછું છે |
-| 💧 **ભેજ** | ${currentA.humidity}% | ${currentB.humidity}% | ${currentA.humidity < currentB.humidity ? cityA.name : cityB.name}માં ભેજ ઓછો છે |
-| 💨 **પવનની ઝડપ** | ${Math.round(currentA.windSpeed)} km/h | ${Math.round(currentB.windSpeed)} km/h | ${Math.abs(currentA.windSpeed - currentB.windSpeed).toFixed(1)} km/h તફાવત |
-| ☀️ **UV ઇન્ડેક્સ** | ${currentA.uvIndex} | ${currentB.uvIndex} | ${currentA.uvIndex > 6 || currentB.uvIndex > 6 ? "વધુ UV" : "મધ્યમ"} |
-| 🍃 **હવાની ગુણવત્તા (AQI)** | ${aqiA.aqi} (${aqiCatA}) | ${aqiB.aqi} (${aqiCatB}) | ${recs.betterAirQuality}માં વધુ સારી હવા છે |
-
-> 💡 **હવામાન નિષ્ણાતનો અભિપ્રાય:** ${recs.betterForTravel} આજ માટે વધુ અનુકૂળ પસંદગી છે.`;
+સમગ્ર રીતે જોતાં, આજે **${recs.betterForTravel}**માં હવામાન વધુ સ્થિર અને સરસ રહેશે.`;
     }
 
     // Default English
-    let verdict = "";
-    if (isTravel) {
-      verdict = `### ✈️ Travel Recommendation: Choose **${recs.betterForTravel}**\n\nFor travelling today, **${recs.betterForTravel}** is the more favorable choice due to ${
-        rainA < rainB
-          ? `significantly lower rain risk (${rainA}% vs ${rainB}%)`
-          : currentA.temperature < currentB.temperature
-          ? `more comfortable ambient temperatures (${tempA} vs ${tempB})`
-          : `more stable overall weather conditions`
-      }.`;
-    } else {
-      verdict = `### ⚖️ Meteorological Comparison: **${cityA.name} vs ${cityB.name}**\n\n* 🏆 **Best for Travel / Outdoor Activities:** **${recs.betterForTravel}**\n* 🍃 **Cleaner Air (AQI):** **${recs.betterAirQuality}** (${aqiA.aqi < aqiB.aqi ? aqiA.aqi : aqiB.aqi} AQI)\n* ❄️ **Cooler Destination:** **${recs.coolerClimate}** (${recs.coolerClimate === cityA.name ? tempA : tempB})`;
-    }
+    const advice = isTravel
+      ? `If you're deciding between travelling to **${cityA.name}** or **${cityB.name}** today, **${recs.betterForTravel}** is definitely the more favorable choice. ${rainA < rainB ? `${cityA.name} has a lower rain risk (${rainA}%) compared to ${cityB.name} (${rainB}%).` : `${recs.betterForTravel} offers more comfortable and settled weather overall.`}`
+      : `Comparing the two cities today, **${cityA.name}** is currently at **${tempA}** (${condA}), while **${cityB.name}** sits at **${tempB}** (${condB}). ${aqiA.aqi !== aqiB.aqi ? `Air quality is also cleaner in ${recs.betterAirQuality} (${Math.min(aqiA.aqi, aqiB.aqi)} AQI).` : ""}`;
 
-    return `${verdict}
+    return `${advice}
 
-**Side-by-Side Comparison Matrix:**
+• **${cityA.name}**: ${tempA} (feels ${feelsA}), ${condA}, Rain: ${rainA}%, Wind: ${Math.round(currentA.windSpeed)} km/h, AQI: ${aqiA.aqi}
+• **${cityB.name}**: ${tempB} (feels ${feelsB}), ${condB}, Rain: ${rainB}%, Wind: ${Math.round(currentB.windSpeed)} km/h, AQI: ${aqiB.aqi}
 
-| Parameter | ${cityA.name} | ${cityB.name} | Advantage / Note |
-| :--- | :--- | :--- | :--- |
-| 🌡️ **Temperature** | **${tempA}** (Feels ${feelsA}) | **${tempB}** (Feels ${feelsB}) | ${recs.coolerClimate} is cooler |
-| 🌧️ **Rain Probability** | **${rainA}%** (${condA}) | **${rainB}%** (${condB}) | ${rainA <= rainB ? cityA.name : cityB.name} has lower rain risk |
-| 💧 **Humidity** | ${currentA.humidity}% | ${currentB.humidity}% | ${currentA.humidity < currentB.humidity ? cityA.name : cityB.name} is less humid |
-| 💨 **Wind Speed** | ${Math.round(currentA.windSpeed)} km/h | ${Math.round(currentB.windSpeed)} km/h | ${Math.abs(currentA.windSpeed - currentB.windSpeed).toFixed(1)} km/h difference |
-| ☀️ **UV Index** | ${currentA.uvIndex} | ${currentB.uvIndex} | ${currentA.uvIndex > 6 || currentB.uvIndex > 6 ? "High UV" : "Moderate"} |
-| 🍃 **Air Quality (AQI)** | ${aqiA.aqi} (${aqiCatA}) | ${aqiB.aqi} (${aqiCatB}) | ${recs.betterAirQuality} has cleaner air |
-
-> 💡 **Meteorologist Verdict:** ${comp.verdict}`;
+Overall, **${recs.betterForTravel}** has the edge for more comfortable outdoor conditions today.`;
   }
 
   /**
-   * Multilingual Temporal expression classifier
+   * Multilingual Temporal expression classifier with conversational context memory
    */
   private static extractTemporalIntent(
     query: string,
-    lang: LanguageCode = "en"
+    lang: LanguageCode = "en",
+    history: { role: string; content?: string }[] = []
   ): {
     target: "today" | "tomorrow" | "tonight" | "weekend" | "7day" | "hourly" | "specific_time";
     specificHour?: number;
+    isTomorrow?: boolean;
+    periodName?: "morning" | "afternoon" | "evening" | "night";
   } {
     const q = query.toLowerCase();
+
+    // Check if query explicitly specifies "tomorrow"
+    let isTomorrow =
+      q.includes("tomorrow") ||
+      q.includes("kal") ||
+      q.includes("kaale") ||
+      q.includes("aavtikale") ||
+      query.includes("कल") ||
+      query.includes("काले") ||
+      query.includes("આવતીકાલે");
+
+    const isExplicitToday =
+      q.includes("today") ||
+      q.includes("right now") ||
+      q.includes("currently") ||
+      q.includes("aaj") ||
+      q.includes("aaje") ||
+      query.includes("आज") ||
+      query.includes("આજે");
+
+    // Inherit "tomorrow" context from history if not explicitly today
+    if (!isTomorrow && !isExplicitToday && history && history.length > 0) {
+      for (let i = history.length - 1; i >= 0; i--) {
+        const hContent = (history[i].content || "").toLowerCase();
+        if (
+          hContent.includes("tomorrow") ||
+          hContent.includes("kal") ||
+          hContent.includes("kaale") ||
+          hContent.includes("aavtikale") ||
+          history[i].content?.includes("कल") ||
+          history[i].content?.includes("આવતીકાલે")
+        ) {
+          isTomorrow = true;
+          break;
+        }
+      }
+    }
 
     // Specific time parsing (e.g. "5 pm", "7:00 pm", "6 baje", "६ बजे", "૬ વાગ્યે")
     const timeMatch = q.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|baje|vagye)?/i);
@@ -1239,19 +1229,40 @@ export class WeatherAI {
       const isAm = timeMatch[3]?.toLowerCase() === "am";
       if (isPm && hour < 12) hour += 12;
       if (isAm && hour === 12) hour = 0;
-      return { target: "specific_time", specificHour: hour };
+      return { target: "specific_time", specificHour: hour, isTomorrow };
+    }
+
+    // Named periods of the day
+    if (
+      q.includes("evening") ||
+      q.includes("shaam") ||
+      q.includes("sanj") ||
+      q.includes("saanj") ||
+      query.includes("शाम") ||
+      query.includes("સાંજ")
+    ) {
+      return { target: "specific_time", specificHour: 18, isTomorrow, periodName: "evening" };
     }
 
     if (
-      q.includes("tomorrow") ||
-      q.includes("kal") ||
-      q.includes("kaale") ||
-      q.includes("aavtikale") ||
-      query.includes("कल") ||
-      query.includes("काले") ||
-      query.includes("આવતીકાલે")
+      q.includes("morning") ||
+      q.includes("subah") ||
+      q.includes("savaar") ||
+      q.includes("savar") ||
+      query.includes("सुबह") ||
+      query.includes("સવાર")
     ) {
-      return { target: "tomorrow" };
+      return { target: "specific_time", specificHour: 9, isTomorrow, periodName: "morning" };
+    }
+
+    if (
+      q.includes("afternoon") ||
+      q.includes("dopahar") ||
+      q.includes("bapor") ||
+      query.includes("दोपहर") ||
+      query.includes("બપોર")
+    ) {
+      return { target: "specific_time", specificHour: 14, isTomorrow, periodName: "afternoon" };
     }
 
     if (
@@ -1262,7 +1273,20 @@ export class WeatherAI {
       query.includes("आज रात") ||
       query.includes("આજે રાત્રે")
     ) {
-      return { target: "tonight" };
+      return { target: "tonight", specificHour: 21, isTomorrow: false, periodName: "night" };
+    }
+
+    if (
+      q.includes("night") ||
+      q.includes("raat") ||
+      query.includes("रात") ||
+      query.includes("રાત")
+    ) {
+      return { target: isTomorrow ? "specific_time" : "tonight", specificHour: 21, isTomorrow, periodName: "night" };
+    }
+
+    if (isTomorrow) {
+      return { target: "tomorrow", isTomorrow: true };
     }
 
     if (
@@ -1292,7 +1316,7 @@ export class WeatherAI {
       return { target: "hourly" };
     }
 
-    return { target: "today" };
+    return { target: "today", isTomorrow: false };
   }
 
   /**
@@ -1316,12 +1340,15 @@ export class WeatherAI {
 
     if (
       q.includes("travel") ||
+      q.includes("travelling") ||
       q.includes("drive") ||
+      q.includes("driving") ||
       q.includes("flight") ||
       q.includes("safe to travel") ||
       q.includes("road trip") ||
       q.includes("highway") ||
       query.includes("यात्रा") ||
+      query.includes("सफ़र") ||
       query.includes("મુસાફરી")
     ) {
       return "travel";
@@ -1330,13 +1357,20 @@ export class WeatherAI {
     if (
       q.includes("wear") ||
       q.includes("clothing") ||
+      q.includes("clothes") ||
       q.includes("umbrella") ||
       q.includes("jacket") ||
       q.includes("coat") ||
+      q.includes("sweater") ||
+      q.includes("hoodie") ||
       q.includes("chata") ||
       q.includes("chhatri") ||
       query.includes("छाता") ||
-      query.includes("છત્રી")
+      query.includes("छत्री") ||
+      query.includes("कपड़े") ||
+      query.includes("पहनना") ||
+      query.includes("પહેરવું") ||
+      query.includes("કપડાં")
     ) {
       return "clothing";
     }
@@ -1386,7 +1420,7 @@ export class WeatherAI {
   private static computeRecommendation(
     domain: AIRecommendation["domain"],
     query: string,
-    temporal: { target: string; specificHour?: number },
+    temporal: { target: string; specificHour?: number; isTomorrow?: boolean },
     current: CurrentWeather,
     hourly: HourlyForecastItem[],
     daily: DailyForecastItem[],
@@ -1394,7 +1428,7 @@ export class WeatherAI {
     location: LocationData,
     unit: "C" | "F" = "C"
   ): AIRecommendation {
-    const isTomorrow = temporal.target === "tomorrow" || query.toLowerCase().includes("tomorrow");
+    const isTomorrow = temporal.target === "tomorrow" || temporal.isTomorrow === true || query.toLowerCase().includes("tomorrow");
     const targetDay = isTomorrow && daily[1] ? daily[1] : daily[0] || daily[0];
     const rainProb = targetDay.precipitationProb || (isTomorrow ? 65 : 20);
 
@@ -1419,13 +1453,18 @@ export class WeatherAI {
   }
 
   /**
-   * Multilingual Natural Language Response Formulator
-   * Strictly formats in English, Hindi, or Gujarati based on detected language
+   * Friendly, natural, conversational response formulator
+   * Strictly grounded in verified weather data, speaking like a helpful weather companion.
    */
   private static generateDeterministicResponse(
     domain: AIRecommendation["domain"],
     query: string,
-    temporal: { target: string; specificHour?: number },
+    temporal: {
+      target: string;
+      specificHour?: number;
+      isTomorrow?: boolean;
+      periodName?: "morning" | "afternoon" | "evening" | "night";
+    },
     location: LocationData,
     current: CurrentWeather,
     hourly: HourlyForecastItem[],
@@ -1435,15 +1474,15 @@ export class WeatherAI {
     unit: "C" | "F" = "C",
     lang: LanguageCode = "en"
   ): string {
-    const isTomorrow = temporal.target === "tomorrow";
+    const isTomorrow = temporal.target === "tomorrow" || temporal.isTomorrow === true;
     const targetDay = isTomorrow && daily[1] ? daily[1] : daily[0] || daily[0];
     const rainProb = targetDay.precipitationProb || (isTomorrow ? 65 : 20);
     const qLower = query.toLowerCase();
 
     const cond = this.getLocalizedCondition(current.conditionText, lang);
-    const aqiCat = this.getLocalizedAQICategory(aqi.category, lang);
+    const targetCond = this.getLocalizedCondition(targetDay.conditionText, lang);
 
-    // 0. Unit conversion query (e.g. "Convert the temperature to Fahrenheit", "फ़ारेनहाइट में तापमान", "તાપમાન ફેરેનહીટમાં")
+    // 0. Unit conversion query ("Convert to Fahrenheit", etc.)
     if (
       qLower.includes("fahrenheit") ||
       (qLower.includes("convert") && (qLower.includes("f") || qLower.includes("temp"))) ||
@@ -1458,102 +1497,114 @@ export class WeatherAI {
       const fLow = formatTemp(targetDay.tempMin, "F");
 
       if (lang === "hi") {
-        return `### 🌡️ ${location.name} में तापमान (फ़ारेनहाइट)
-
-**${location.name}** में वर्तमान तापमान फ़ारेनहाइट में परिवर्तित करने पर **${fTemp}** है (महसूस होने वाला तापमान: **${fFeels}**)।
-
-* 🔺 **आज का अधिकतम:** **${fHigh}**
-* 🔻 **रात का न्यूनतम:** **${fLow}**
-* 💧 **आर्द्रता (नमी):** ${current.humidity}%
-* 💨 **हवा की गति:** ${formatWindSpeed(current.windSpeed)} (झोंके: ${formatWindSpeed(current.windGusts)})
-
-वर्तमान वायुमंडलीय स्थिति **${cond}** है।`;
+        return `${location.name} में इस समय तापमान फ़ारेनहाइट में लगभग **${fTemp}** है (महसूस: **${fFeels}**)। आज अधिकतम तापमान **${fHigh}** और रात में न्यूनतम **${fLow}** रहने की संभावना है। आसमान मुख्य रूप से ${cond} बना हुआ है।`;
       }
-
       if (lang === "gu") {
-        return `### 🌡️ ${location.name}માં તાપમાન (ફેરેનહીટ)
-
-**${location.name}**માં હાલનું તાપમાન ફેરેનહીટમાં રૂપાંતરિત કરતા **${fTemp}** છે (અનુભવાતું તાપમાન: **${fFeels}**).
-
-* 🔺 **આજનું મહત્તમ:** **${fHigh}**
-* 🔻 **રાત્રિનું લઘુત્તમ:** **${fLow}**
-* 💧 **ભેજ:** ${current.humidity}%
-* 💨 **પવનની ઝડપ:** ${formatWindSpeed(current.windSpeed)} (ઝોંકા: ${formatWindSpeed(current.windGusts)})
-
-હાલની વાતાવરણીય સ્થિતિ **${cond}** છે.`;
+        return `${location.name}માં અત્યારે તાપમાન ફેરેનહીટમાં આશરે **${fTemp}** છે (અનુભવાતું: **${fFeels}**). આજે મહત્તમ તાપમાન **${fHigh}** અને રાત્રે લઘુત્તમ **${fLow}** સુધી જવાની શક્યતા છે. વાતાવરણ ${cond} રહેશે.`;
       }
-
-      return `### 🌡️ Temperature in ${location.name} (Fahrenheit)
-
-In **${location.name}**, the current temperature converted to Fahrenheit is **${fTemp}** (feels like **${fFeels}**).
-
-* 🔺 **Today's High:** **${fHigh}**
-* 🔻 **Overnight Low:** **${fLow}**
-* 💧 **Relative Humidity:** ${current.humidity}%
-* 💨 **Wind Speed:** ${formatWindSpeed(current.windSpeed)} with gusts up to ${formatWindSpeed(current.windGusts)}
-
-Current atmospheric conditions are **${current.conditionText.toLowerCase()}**.`;
+      return `Right now in **${location.name}**, the temperature in Fahrenheit is **${fTemp}** (feels like **${fFeels}**). Today will reach a high of **${fHigh}** and dip to **${fLow}** overnight with ${current.conditionText.toLowerCase()} skies.`;
     }
 
-    // 0b. Outdoor activities query
-    if (
-      qLower.includes("outdoor") ||
-      qLower.includes("outside") ||
-      qLower.includes("go out") ||
-      qLower.includes("activities") ||
-      qLower.includes("bahar") ||
-      qLower.includes("javanu") ||
-      qLower.includes("ghoomne") ||
-      query.includes("बाहर") ||
-      query.includes("घूमने") ||
-      query.includes("બહાર") ||
-      query.includes("જવાનું")
-    ) {
-      const isGood = rainProb <= 35 && current.temperature <= (unit === "F" ? 95 : 35) && current.temperature >= (unit === "F" ? 50 : 10) && aqi.aqi <= 150;
+    // 1. Specific Time or Period Query ("What about evening?", "Will it rain tomorrow evening?", "morning", "5 pm")
+    if (temporal.specificHour !== undefined || temporal.periodName !== undefined) {
+      const targetHour = temporal.specificHour ?? 18;
+      // Search in hourly array for corresponding hour
+      // Today is indices 0-23, tomorrow is indices 24-47
+      const offset = isTomorrow ? 24 : 0;
+      const hourIndex = Math.min(Math.max(0, offset + (targetHour % 24)), hourly.length - 1);
+      const hourItem = hourly[hourIndex] || hourly[0];
+      const hRain = hourItem.precipitationProb ?? rainProb;
+      const hTemp = formatTemp(hourItem.temperature, unit);
+      const hCond = this.getLocalizedCondition(hourItem.conditionText, lang);
+
+      const periodEn = temporal.periodName || (targetHour >= 17 && targetHour < 21 ? "evening" : targetHour >= 12 && targetHour < 17 ? "afternoon" : targetHour < 12 ? "morning" : "night");
+      const dayEn = isTomorrow ? "tomorrow" : "today";
+
+      const periodHi = periodEn === "evening" ? "शाम" : periodEn === "morning" ? "सुबह" : periodEn === "afternoon" ? "दोपहर" : "रात";
+      const dayHi = isTomorrow ? "कल" : "आज";
+
+      const periodGu = periodEn === "evening" ? "સાંજે" : periodEn === "morning" ? "સવારે" : periodEn === "afternoon" ? "બપોરે" : "રાત્રે";
+      const dayGu = isTomorrow ? "કાલે" : "આજે";
 
       if (lang === "hi") {
-        return `### ☀️ बाहरी गतिविधियों (आउटडोर) के लिए सलाह: ${location.name}
-
-${isGood ? `✅ **हाँ, आज बाहरी गतिविधियों के लिए मौसम अनुकूल है!** **${location.name}** में मौसम सुखद है।` : `⚠️ **बाहरी गतिविधियों के लिए सावधानी बरतें।** **${location.name}** में मौसम पूरी तरह अनुकूल नहीं है।`}
-
-* 🕒 **सर्वोत्तम समय:** शाम 5:00 बजे से 7:30 बजे तक (सुहावना मौसम)
-* 🌡️ **तापमान:** ${formatTemp(current.temperature, unit)} (महसूस: ${formatTemp(current.feelsLike, unit)})
-* 🌧️ **बारिश की संभावना:** **${rainProb}%** (${rainProb > 40 ? "हल्की फुहारों की संभावना" : "सूखा मौसम"})
-* ☀️ **UV इंडेक्स:** ${current.uvIndex} (${current.uvIndex >= 6 ? "उच्च — सनस्क्रीन लगाएं" : "मध्यम"})
-* 🍃 **वायु गुणवत्ता:** ${aqi.aqi} AQI (${aqiCat})
-
-${isGood ? "टहलने, जॉगिंग, साइकिल चलाने या घूमने के लिए मौसम बहुत बढ़िया है।" : "यदि बाहर जाना आवश्यक हो तो छाता और पानी साथ रखें।"}`;
+        if (hRain >= 50) {
+          return `हाँ, ${dayHi} ${periodHi} को ${location.name} में बारिश होने के काफी आसार हैं। 🌧️ लगभग **${hRain}%** बारिश की संभावना रहेगी और तापमान **${hTemp}** के आसपास रहेगा। बाहर निकलें तो छाता जरूर साथ रख लें।`;
+        }
+        if (hRain >= 25) {
+          return `${dayHi} ${periodHi} को ${location.name} में मौसम मुख्य रूप से ${hCond} और सुहावना रहेगा, तापमान **${hTemp}** के करीब होगा। हल्की फुहारों की थोड़ी संभावना (${hRain}%) है, लेकिन मौसम ज्यादातर ठीक रहेगा।`;
+        }
+        return `${dayHi} ${periodHi} के समय ${location.name} में मौसम बहुत बढ़िया रहेगा! आसमान ${hCond} रहेगा और तापमान लगभग **${hTemp}** रहेगा। बारिश की कोई खास संभावना नहीं है (${hRain}%), तो बाहर जाने के लिए यह बेहतरीन समय है।`;
       }
 
       if (lang === "gu") {
-        return `### ☀️ બહારની પ્રવૃત્તિઓ માટે હવામાન સલાહ: ${location.name}
-
-${isGood ? `✅ **હા, આજે બહાર જવા માટે હવામાન અનુકૂળ છે!** **${location.name}**માં વાતાવરણ સારું છે.` : `⚠️ **બહારની પ્રવૃત્તિઓ માટે સાવચેતી રાખવી જરૂરી છે.** **${location.name}**માં હવામાન સંપૂર્ણ અનુકૂળ નથી.`}
-
-* 🕒 **શ્રેષ્ઠ સમય:** સાંજે 5:00 થી 7:30 વાગ્યા સુધી (સુખદ ઠંડક)
-* 🌡️ **તાપમાન:** ${formatTemp(current.temperature, unit)} (અનુભવાતું: ${formatTemp(current.feelsLike, unit)})
-* 🌧️ **વરસાદની શક્યતા:** **${rainProb}%** (${rainProb > 40 ? "વરસાદી ઝાપટાંની શક્યતા" : "સૂકું વાતાવરણ"})
-* ☀️ **UV ઇન્ડેક્સ:** ${current.uvIndex} (${current.uvIndex >= 6 ? "વધુ — સનસ્ક્રીન લગાવો" : "મધ્યમ"})
-* 🍃 **હવાની ગુણવત્તા:** ${aqi.aqi} AQI (${aqiCat})
-
-${isGood ? "ચાલવા, જોગિંગ, સાયકલિંગ અથવા ફરવા જવા માટે શ્રેષ્ઠ વાતાવરણ છે." : "જો બહાર જવું જરૂરી હોય તો છત્રી અને પીવાનું પાણી સાથે રાખવું."}`;
+        if (hRain >= 50) {
+          return `હા, ${dayGu} ${periodGu}ના સમયે ${location.name}માં વરસાદ પડવાની ઘણી શક્યતા છે. 🌧️ આશરે **${hRain}%** વરસાદની સંભાવના છે અને તાપમાન **${hTemp}** આસપાસ રહેશે. બહાર જતી વખતે છત્રી સાથે રાખવી સારી રહેશે.`;
+        }
+        if (hRain >= 25) {
+          return `${dayGu} ${periodGu} ${location.name}માં વાતાવરણ ${hCond} રહેશે અને તાપમાન **${hTemp}** આસપાસ રહેશે. હળવા ઝાપટાંની થોડી શક્યતા (${hRain}%) છે, પણ મોટાભાગે વાતાવરણ સારું રહેશે.`;
+        }
+        return `${dayGu} ${periodGu} ${location.name}માં હવામાન એકદમ ખુશનુમા રહેશે! આકાશ ${hCond} રહેશે અને તાપમાન **${hTemp}** આસપાસ રહેશે. વરસાદની કોઈ સંભાવના નથી (${hRain}%), તેથી બહાર ફરવા માટે ઉત્તમ સમય છે.`;
       }
 
-      const isGoodEn = rainProb <= 35 && current.temperature <= (unit === "F" ? 95 : 35) && current.temperature >= (unit === "F" ? 50 : 10) && aqi.aqi <= 150;
-      return `### ☀️ Outdoor Activity Recommendation: ${location.name}
-
-${isGoodEn ? `✅ **YES, conditions are favorable for outdoor activities!** Weather in **${location.name}** is pleasant.` : `⚠️ **Exercise caution for outdoor activities.** Weather in **${location.name}** is sub-optimal.`}
-
-* 🕒 **Recommended Window:** 5:00 PM – 7:30 PM (cooler temperatures & pleasant breeze)
-* 🌡️ **Temperature:** ${formatTemp(current.temperature, unit)} (Feels like ${formatTemp(current.feelsLike, unit)})
-* 🌧️ **Precipitation Probability:** **${rainProb}%** (${rainProb > 40 ? "Passing showers possible" : "Dry conditions"})
-* ☀️ **UV Index:** ${current.uvIndex} (${current.uvIndex >= 6 ? "High — Wear sunscreen" : "Moderate"})
-* 🍃 **Air Quality:** ${aqi.aqi} AQI (${aqi.category})
-
-${isGoodEn ? "Great conditions for walking, jogging, cycling, or casual travel." : "Keep hydration and rain gear handy if you need to be outdoors."}`;
+      // English
+      if (hRain >= 50) {
+        return `Looks like you'll probably get some rain ${dayEn} ${periodEn} in ${location.name}. 🌧️ There's around a **${hRain}% chance of rain**, with temperatures near **${hTemp}**. It's going to feel a little humid, so carrying an umbrella would be a good idea.`;
+      }
+      if (hRain >= 25) {
+        return `For ${dayEn} ${periodEn} in ${location.name}, expect ${hourItem.conditionText.toLowerCase()} skies with temperatures around **${hTemp}**. There's a slight chance of passing showers (${hRain}%), but it should be mostly fine.`;
+      }
+      return `For ${dayEn} ${periodEn} in ${location.name}, it looks really pleasant! Expect ${hourItem.conditionText.toLowerCase()} conditions with temperatures around **${hTemp}** and a gentle breeze. Rain is very unlikely (${hRain}%), so it's a great time to be outdoors.`;
     }
 
-    // 1. Rain & Umbrella Query (e.g. "Will it rain today?", "आज बारिश होगी?", "શું વરસાદ પડશે?")
+    // 2. Clothing / What to Wear Queries ("What should I wear tomorrow?", "What to wear?")
+    if (
+      domain === "clothing" ||
+      qLower.includes("wear") ||
+      qLower.includes("clothing") ||
+      qLower.includes("clothes") ||
+      qLower.includes("jacket") ||
+      query.includes("कपड़े") ||
+      query.includes("पहनना") ||
+      query.includes("પહેરવું") ||
+      query.includes("કપડાં")
+    ) {
+      const maxT = targetDay.tempMax;
+      const minT = targetDay.tempMin;
+      const dayWordEn = isTomorrow ? "Tomorrow" : "Today";
+      const dayWordHi = isTomorrow ? "कल" : "आज";
+      const dayWordGu = isTomorrow ? "કાલે" : "આજે";
+
+      if (lang === "hi") {
+        if (maxT >= 30) {
+          return `${location.name} में ${dayWordHi} मौसम काफी गर्म रहने वाला है, जिसमें तापमान **${formatTemp(maxT, unit)}** तक जा सकता है। हल्के, ढीले और सूती कपड़े सबसे आरामदायक रहेंगे। ${rainProb > 40 ? "साथ ही बारिश के आसार हैं, इसलिए छाता साथ रखना न भूलें।" : "धूप तेज़ रहने पर सनग्लासेस या टोपी भी मददगार रहेगी।"}`;
+        }
+        if (maxT <= 18) {
+          return `${location.name} में ${dayWordHi} हल्की ठंड रहेगी और तापमान **${formatTemp(minT, unit)}** से **${formatTemp(maxT, unit)}** के बीच रहेगा। सुबह और शाम के समय जैकेट या स्वेटर पहनना आरामदायक रहेगा।`;
+        }
+        return `${location.name} में ${dayWordHi} मौसम सुहावना रहेगा, तापमान लगभग **${formatTemp(maxT, unit)}** रहने की उम्मीद है। सामान्य कैजुअल कपड़े जैसे टी-शर्ट और जींस बिल्कुल सही रहेंगे। ${rainProb > 40 ? "हल्की बारिश हो सकती है, इसलिए छोटा छाता साथ रख लें।" : ""}`;
+      }
+
+      if (lang === "gu") {
+        if (maxT >= 30) {
+          return `${location.name}માં ${dayWordGu} તાપમાન **${formatTemp(maxT, unit)}** સુધી જશે એટલે ગરમી રહેશે. હળવા અને સુતરાઉ કપડાં પહેરવા સૌથી વધુ આરામદાયક રહેશે. ${rainProb > 40 ? "સાથે વરસાદની શક્યતા હોવાથી છત્રી સાથે રાખજો." : "બપોરે તડકો રહેવાથી સનગ્લાસ અથવા કેપ ઉપયોગી રહેશે."}`;
+        }
+        if (maxT <= 18) {
+          return `${location.name}માં ${dayWordGu} વાતાવરણ ઠંડું રહેશે અને તાપમાન **${formatTemp(minT, unit)}** થી **${formatTemp(maxT, unit)}** વચ્ચે રહેશે. સવારે અને સાંજે હળવું જેકેટ અથવા સ્વેટર પહેરવું હિતાવહ છે.`;
+        }
+        return `${location.name}માં ${dayWordGu} વાતાવરણ ખૂબ સુખદ રહેશે, તાપમાન આશરે **${formatTemp(maxT, unit)}** રહેશે. સામાન્ય આરામદાયક કપડાં પહેરી શકાય. ${rainProb > 40 ? "વરસાદી ઝાપટાંની શક્યતા હોવાથી સાથે છત્રી રાખવી." : ""}`;
+      }
+
+      // English
+      if (maxT >= 30) {
+        return `${dayWordEn} in ${location.name} looks warm with temperatures reaching near **${formatTemp(maxT, unit)}**. Light, breathable cotton clothes would be the most comfortable. ${rainProb > 40 ? "Since rain is also expected, you may want to carry an umbrella as well." : "If you're spending time in the afternoon sun, sunglasses or a cap will be helpful."}`;
+      }
+      if (maxT <= 18) {
+        return `It's going to be on the cooler side ${dayWordEn.toLowerCase()} in ${location.name}, ranging from **${formatTemp(minT, unit)}** to **${formatTemp(maxT, unit)}**. A warm jacket, hoodie, or layers will keep you cozy, especially in the morning and evening.`;
+      }
+      return `${dayWordEn} in ${location.name} looks pleasant and comfortable with temperatures around **${formatTemp(maxT, unit)}**. Everyday casual wear like a light shirt and jeans will be ideal. ${rainProb > 40 ? "Keep a compact umbrella handy just in case of a passing shower." : ""}`;
+    }
+
+    // 3. Rain & Umbrella Queries ("Will it rain tomorrow?", "Do I need an umbrella?")
     if (
       qLower.includes("rain") ||
       qLower.includes("umbrella") ||
@@ -1570,158 +1621,133 @@ ${isGoodEn ? "Great conditions for walking, jogging, cycling, or casual travel."
       query.includes("છત્રી")
     ) {
       const willRain = rainProb >= 40 || current.precipitation > 0;
+      const dayWordEn = isTomorrow ? "tomorrow" : "today";
+      const dayWordHi = isTomorrow ? "कल" : "आज";
+      const dayWordGu = isTomorrow ? "કાલે" : "આજે";
 
       if (lang === "hi") {
-        return `### 🌧️ बारिश और छाता पूर्वानुमान: ${location.name}
-
-${willRain ? `☔ **हाँ, छाता साथ रखें!** आज ${location.name} में बारिश की संभावना **${rainProb}%** है।` : `☀️ **छाते की आवश्यकता नहीं है।** ${location.name} में बारिश की संभावना बहुत कम (**${rainProb}%**) है।`}
-
-* 🌡️ **तापमान:** ${formatTemp(targetDay.tempMax, unit)} (न्यूनतम: ${formatTemp(targetDay.tempMin, unit)})
-* 🌧️ **बारिश की संभावना:** **${rainProb}%** (${cond})
-* 💧 **आर्द्रता (नमी):** ${current.humidity}%
-* 💨 **हवा की गति:** ${targetDay.windSpeedMax} km/h
-
-> 💡 **मौसम सलाह:** ${
-          rainProb > 60
-            ? "आज शाम बारिश होने की संभावना है। छाता साथ रखना अच्छा रहेगा।"
-            : rainProb > 30
-            ? "दोपहर या शाम के समय हल्की फुहारें संभव हैं। छोटा छाता साथ रखना सुरक्षित रहेगा।"
-            : "मौसम मुख्यतः सूखा रहेगा और बारिश का जोखिम नहीं है।"
-        }`;
+        if (willRain) {
+          return `${dayWordHi} ${location.name} में बारिश होने की अच्छी संभावना है (लगभग **${rainProb}%**)। 🌧️ तापमान **${formatTemp(targetDay.tempMax, unit)}** के आसपास रहेगा। बाहर जाएं तो छाता साथ रख लेना बेहतर रहेगा।`;
+        }
+        return `${dayWordHi} ${location.name} में बारिश की संभावना बहुत कम है—लगभग **${rainProb}%**। छाते की जरूरत नहीं पड़ेगी, मौसम मुख्य रूप से ${targetCond} और सुहावना रहेगा।`;
       }
 
       if (lang === "gu") {
-        return `### 🌧️ વરસાદ અને છત્રીની આગાહી: ${location.name}
-
-${willRain ? `☔ **હા, છત્રી સાથે રાખવી સારી રહેશે!** આજે ${location.name}માં વરસાદની શક્યતા **${rainProb}%** છે.` : `☀️ **છત્રીની જરૂર નથી.** ${location.name}માં વરસાદની શક્યતા ઘણી ઓછી (**${rainProb}%**) છે.`}
-
-* 🌡️ **તાપમાન:** ${formatTemp(targetDay.tempMax, unit)} (લઘુત્તમ: ${formatTemp(targetDay.tempMin, unit)})
-* 🌧️ **વરસાદની શક્યતા:** **${rainProb}%** (${cond})
-* 💧 **ભેજ:** ${current.humidity}%
-* 💨 **પવનની ઝડપ:** ${targetDay.windSpeedMax} km/h
-
-> 💡 **હવામાન સલાહ:** ${
-          rainProb > 60
-            ? "આજે સાંજે વરસાદ પડવાની શક્યતા છે. છત્રી સાથે રાખવી સારી રહેશે."
-            : rainProb > 30
-            ? "સાંજના સમયે હળવા ઝાપટાં પડી શકે છે. નાની છત્રી સાથે રાખવી હિતાવહ છે."
-            : "વાતાવરણ મુખ્યત્વે સૂકું રહેશે અને વરસાદની સંભાવના નહિવત છે."
-        }`;
+        if (willRain) {
+          return `${dayWordGu} ${location.name}માં વરસાદ પડવાની સારી શક્યતા છે (લગભગ **${rainProb}%**). 🌧️ તાપમાન **${formatTemp(targetDay.tempMax, unit)}** આસપાસ રહેશે. બહાર નીકળતી વખતે છત્રી સાથે રાખવી સલાહભરી રહેશે.`;
+        }
+        return `${dayWordGu} ${location.name}માં વરસાદની શક્યતા ઘણી ઓછી છે—માત્ર **${rainProb}%** આસપાસ. છત્રીની જરૂર નથી, હવામાન મુખ્યત્વે ${targetCond} અને સરસ રહેશે.`;
       }
 
       // English
-      return `### 🌧️ Rain & Umbrella Forecast: ${location.name}
-
-${willRain ? `☔ **YES, carry an umbrella!** There is a **${rainProb}% chance of rain** ${isTomorrow ? "tomorrow" : "today"} in ${location.name}.` : `☀️ **NO umbrella needed.** Rain probability is low (**${rainProb}%**) in ${location.name}.`}
-
-* 🌡️ **Temperature:** ${formatTemp(targetDay.tempMax, unit)} (Low: ${formatTemp(targetDay.tempMin, unit)})
-* 🌧️ **Rain Probability:** **${rainProb}%** (${targetDay.conditionText})
-* 💧 **Current Humidity:** ${current.humidity}%
-* ☁️ **Cloud Cover:** ${current.cloudCover}%
-* 💨 **Wind:** ${targetDay.windSpeedMax} km/h
-
-> 💡 **Precipitation Outlook:** ${
-        rainProb > 60
-          ? "It looks likely to rain this evening. Carrying an umbrella would be a good idea."
-          : rainProb > 30
-          ? "Passing showers possible during evening or afternoon intervals. Keeping a compact umbrella is a good precaution."
-          : "Predominantly dry conditions with negligible rain risk."
-      }`;
+      if (willRain) {
+        return `There's a good chance of rain ${dayWordEn} in ${location.name} (around **${rainProb}%**). 🌧️ Temperatures will hover near **${formatTemp(targetDay.tempMax, unit)}**. I'd keep an umbrella handy if you're heading out.`;
+      }
+      return `Rain is very unlikely ${dayWordEn} in ${location.name}—only about a **${rainProb}% chance**. You can leave the umbrella at home and enjoy mostly ${targetDay.conditionText.toLowerCase()} weather around **${formatTemp(targetDay.tempMax, unit)}**.`;
     }
 
-    // 2. Tomorrow's Forecast (e.g. "What's the weather tomorrow in Jetpur?", "કાલે જેતપુરમાં હવામાન કેવું રહેશે?")
+    // 4. Travel / Driving Queries ("Is it good weather for travelling?")
+    if (
+      domain === "travel" ||
+      qLower.includes("travel") ||
+      qLower.includes("driving") ||
+      qLower.includes("drive") ||
+      qLower.includes("trip") ||
+      query.includes("यात्रा") ||
+      query.includes("मुसाफिरी") ||
+      query.includes("મુસાફરી")
+    ) {
+      const isWetOrWindy = rainProb >= 50 || current.windSpeed >= 35;
+      const dayWordEn = isTomorrow ? "tomorrow" : "today";
+      const dayWordHi = isTomorrow ? "कल" : "आज";
+      const dayWordGu = isTomorrow ? "કાલે" : "આજે";
+
+      if (lang === "hi") {
+        if (isWetOrWindy) {
+          return `यदि आप ${dayWordHi} ${location.name} की यात्रा कर रहे हैं, तो ध्यान रखें कि बारिश (${rainProb}%) के कारण सड़कों पर थोड़ी नमी और देरी हो सकती है। सावधानी से गाड़ी चलाएं और छाता साथ रखें।`;
+        }
+        return `हाँ, ${dayWordHi} ${location.name} की यात्रा के लिए मौसम बहुत अच्छा है! आसमान साफ़ है, दृश्यता अच्छी है और तापमान **${formatTemp(targetDay.tempMax, unit)}** के आसपास आरामदायक रहेगा। आपकी यात्रा सुखद रहे!`;
+      }
+
+      if (lang === "gu") {
+        if (isWetOrWindy) {
+          return `જો તમે ${dayWordGu} ${location.name} જઈ રહ્યા હો, તો વરસાદ (${rainProb}%) હોવાથી મુસાફરીમાં થોડો વધુ સમય લાગી શકે છે. ધીમે વાહન ચલાવવું અને છત્રી સાથે રાખવી સલાહભર્યું છે.`;
+        }
+        return `હા, ${dayWordGu} ${location.name}ની મુસાફરી માટે હવામાન ઘણું અનુકૂળ છે! વાતાવરણ એકદમ ખુલ્લું છે અને તાપમાન **${formatTemp(targetDay.tempMax, unit)}** સાથે આરામદાયક રહેશે. તમારી મુસાફરી આનંદદાયક રહે!`;
+      }
+
+      // English
+      if (isWetOrWindy) {
+        return `If you're travelling to ${location.name} ${dayWordEn}, keep in mind that rain (${rainProb}%) could slow down road travel a bit. Drive with care and keep an umbrella or rain gear ready.`;
+      }
+      return `Yes, the weather looks great for travelling to ${location.name} ${dayWordEn}! Conditions are mostly ${targetDay.conditionText.toLowerCase()} with clear visibility and comfortable temperatures around **${formatTemp(targetDay.tempMax, unit)}**. Should be a smooth journey.`;
+    }
+
+    // 5. Outdoor Activities / Sports ("Can I go out?", "cricket", "activities")
+    if (
+      domain === "sports" ||
+      domain === "cricket" ||
+      domain === "events" ||
+      qLower.includes("outdoor") ||
+      qLower.includes("outside") ||
+      qLower.includes("go out") ||
+      qLower.includes("play") ||
+      query.includes("बाहर") ||
+      query.includes("ઘૂમવા") ||
+      query.includes("બહાર")
+    ) {
+      const isGood = rainProb <= 35 && current.temperature <= (unit === "F" ? 95 : 35);
+      if (lang === "hi") {
+        if (isGood) {
+          return `हाँ, आज ${location.name} में बाहर जाने और घूमने के लिए मौसम काफी अनुकूल है! वर्तमान में तापमान **${formatTemp(current.temperature, unit)}** है। शाम का समय टहलने या खेलकूद के लिए सबसे सुखद रहेगा।`;
+        }
+        return `${location.name} में मौसम बाहर की गतिविधियों के लिए थोड़ा सावधानी भरा है (${rainProb > 40 ? "बारिश के आसार हैं" : "गर्मी अधिक है"})। यदि बाहर जाना हो तो पानी और छाता साथ रखें।`;
+      }
+      if (lang === "gu") {
+        if (isGood) {
+          return `હા, આજે ${location.name}માં બહાર જવા કે રમવા માટે વાતાવરણ ખૂબ સારું છે! અત્યારે તાપમાન **${formatTemp(current.temperature, unit)}** છે. સાંજનો સમય ફરવા માટે સૌથી શ્રેષ્ઠ રહેશે.`;
+        }
+        return `${location.name}માં બહાર જતી વખતે થોડી સાવચેતી રાખવી જરૂરી છે (${rainProb > 40 ? "વરસાદની શક્યતા છે" : "તડકો વધુ છે"}). પાણી અને છત્રી સાથે રાખવા સલાહ છે.`;
+      }
+      if (isGood) {
+        return `Yes, today is great for outdoor activities in ${location.name}! It's currently **${formatTemp(current.temperature, unit)}** with ${current.conditionText.toLowerCase()} skies. Late afternoon and evening will be especially pleasant for a walk or game.`;
+      }
+      return `Conditions in ${location.name} are a bit challenging for outdoor plans right now (${rainProb > 40 ? "rain showers are possible" : "temperatures are high"}). If you do head out, keep hydrated and carry an umbrella.`;
+    }
+
+    // 6. Tomorrow's General Forecast ("What's the weather like tomorrow?")
     if (isTomorrow) {
       const tomorrow = daily[1] || daily[0];
       const tCond = this.getLocalizedCondition(tomorrow.conditionText, lang);
 
       if (lang === "hi") {
-        return `### 📅 कल का मौसम पूर्वानुमान: ${location.name}
-
-कल **${location.name}** में **${tCond}** रहने की संभावना है, जिसमें अधिकतम तापमान **${formatTemp(tomorrow.tempMax, unit)}** और न्यूनतम तापमान **${formatTemp(tomorrow.tempMin, unit)}** रहेगा।
-
-* 🌡️ **तापमान सीमा:** अधिकतम **${formatTemp(tomorrow.tempMax, unit)}** / न्यूनतम **${formatTemp(tomorrow.tempMin, unit)}**
-* 🌧️ **बारिश की संभावना:** **${tomorrow.precipitationProb}%** (${tomorrow.precipitationProb > 40 ? "बारिश की फुहारें संभव" : "मुख्यतः सूखा"})
-* 💨 **हवा के झोंके:** ${tomorrow.windSpeedMax} km/h
-* 🍃 **वायु गुणवत्ता अनुमान:** ${aqiCat} श्रेणी (~${aqi.aqi} AQI)
-
-समग्र वायुमंडलीय स्थिति आपके दैनिक कार्यों के लिए अनुकूल रहने की उम्मीद है।`;
+        return `कल ${location.name} में मौसम मुख्य रूप से ${tCond} रहने की उम्मीद है। दिन का अधिकतम तापमान लगभग **${formatTemp(tomorrow.tempMax, unit)}** और रात में न्यूनतम **${formatTemp(tomorrow.tempMin, unit)}** रहेगा। ${tomorrow.precipitationProb > 40 ? `लगभग ${tomorrow.precipitationProb}% बारिश की संभावना है, इसलिए छाता साथ रख लें।` : "बारिश की संभावना न के बराबर है, इसलिए दिनभर के काम आसानी से निपटाए जा सकते हैं।"}`;
       }
-
       if (lang === "gu") {
-        return `### 📅 કાલના હવામાનની આગાહી: ${location.name}
-
-આવતીકાલે **${location.name}**માં **${tCond}** વાતાવરણ રહેવાની શક્યતા છે, જેમાં મહત્તમ તાપમાન **${formatTemp(tomorrow.tempMax, unit)}** અને લઘુત્તમ તાપમાન **${formatTemp(tomorrow.tempMin, unit)}** રહેશે.
-
-* 🌡️ **તાપમાન:** મહત્તમ **${formatTemp(tomorrow.tempMax, unit)}** / લઘુત્તમ **${formatTemp(tomorrow.tempMin, unit)}**
-* 🌧️ **વરસાદની શક્યતા:** **${tomorrow.precipitationProb}%** (${tomorrow.precipitationProb > 40 ? "વરસાદી ઝાપટાંની શક્યતા" : "મુખ્યત્વે સૂકું"})
-* 💨 **પવનની ઝડપ:** ${tomorrow.windSpeedMax} km/h
-* 🍃 **હવાની ગુણવત્તા:** ${aqiCat} શ્રેણી (~${aqi.aqi} AQI)
-
-તમારી દૈનિક યોજનાઓ માટે વાતાવરણ અનુકૂળ રહેવાની ધારણા છે.`;
+        return `આવતીકાલે ${location.name}માં હવામાન મુખ્યત્વે ${tCond} રહેશે. દિવસનું મહત્તમ તાપમાન આશરે **${formatTemp(tomorrow.tempMax, unit)}** અને રાત્રિનું લઘુત્તમ **${formatTemp(tomorrow.tempMin, unit)}** રહેશે. ${tomorrow.precipitationProb > 40 ? `લગભગ ${tomorrow.precipitationProb}% વરસાદની શક્યતા છે, તેથી છત્રી સાથે રાખવી.` : "વરસાદની સંભાવના નથી, એટલે દિવસ આરામથી પસાર કરી શકાશે."}`;
       }
-
-      return `### 📅 Tomorrow's Weather Forecast for ${location.name}
-
-Tomorrow in **${location.name}**, expect **${tomorrow.conditionText}** with temperatures reaching a high of **${formatTemp(tomorrow.tempMax, unit)}** and an overnight low of **${formatTemp(tomorrow.tempMin, unit)}**.
-
-* 🌡️ **Temperature Range:** High of **${formatTemp(tomorrow.tempMax, unit)}** / Low of **${formatTemp(tomorrow.tempMin, unit)}**
-* 🌧️ **Precipitation Likelihood:** **${tomorrow.precipitationProb}%** (${tomorrow.precipitationProb > 40 ? "Rain showers likely" : "Mostly dry"})
-* 💨 **Peak Wind Gusts:** ${tomorrow.windSpeedMax} km/h
-* 🍃 **Air Quality Forecast:** ${aqi.category} category (~${aqi.aqi} AQI)
-
-Overall atmospheric conditions remain stable for your daily plans.`;
+      return `Tomorrow in ${location.name} looks mostly ${tomorrow.conditionText.toLowerCase()}, with highs reaching around **${formatTemp(tomorrow.tempMax, unit)}** and cooling to **${formatTemp(tomorrow.tempMin, unit)}** overnight. ${tomorrow.precipitationProb > 40 ? `There's about a ${tomorrow.precipitationProb}% chance of rain, so keep an umbrella nearby.` : "Rain is unlikely, making it a great day for any plans."}`;
     }
 
-    // 3. Direct Temperature Query (e.g. "What is the temperature in Jetpur?", "રાજકોટમાં તાપમાન કેટલું છે?")
+    // 7. Direct Temperature Query ("What is the temperature?")
     if (
       qLower.includes("temperature") ||
       qLower.includes("temp") ||
       qLower.includes("how hot") ||
       qLower.includes("how cold") ||
-      qLower.includes("tapman") ||
       query.includes("तापमान") ||
-      query.includes("तापीय") ||
       query.includes("તાપમાન")
     ) {
       if (lang === "hi") {
-        return `### 🌡️ ${location.name} में तापमान
-
-**${location.name}** में वर्तमान तापमान **${formatTemp(current.temperature, unit)}** है (महसूस होने वाला तापमान: **${formatTemp(current.feelsLike, unit)}**)।
-
-* 🔺 **आज का अधिकतम तापमान:** **${formatTemp(targetDay.tempMax, unit)}**
-* 🔻 **रात का न्यूनतम तापमान:** **${formatTemp(targetDay.tempMin, unit)}**
-* 💧 **आर्द्रता (नमी):** ${current.humidity}% | ओस बिंदु: ${formatTemp(current.dewPoint, unit)}
-* 💨 **हवा की गति:** ${formatWindSpeed(current.windSpeed)} (झोंके: ${formatWindSpeed(current.windGusts)})
-
-वर्तमान मौसम की स्थिति **${cond}** है।`;
+        return `${location.name} में इस समय तापमान लगभग **${formatTemp(current.temperature, unit)}** है (महसूस: **${formatTemp(current.feelsLike, unit)}**) और आसमान ${cond} है। आज अधिकतम तापमान **${formatTemp(targetDay.tempMax, unit)}** तक जाएगा और रात में **${formatTemp(targetDay.tempMin, unit)}** तक रहेगा।`;
       }
-
       if (lang === "gu") {
-        return `### 🌡️ ${location.name}માં તાપમાન
-
-**${location.name}**માં હાલનું તાપમાન **${formatTemp(current.temperature, unit)}** છે (અનુભવાતું તાપમાન: **${formatTemp(current.feelsLike, unit)}**).
-
-* 🔺 **આજનું મહત્તમ તાપમાન:** **${formatTemp(targetDay.tempMax, unit)}**
-* 🔻 **રાત્રિનું લઘુત્તમ તાપમાન:** **${formatTemp(targetDay.tempMin, unit)}**
-* 💧 **ભેજ:** ${current.humidity}% | ડ્યૂ પોઈન્ટ: ${formatTemp(current.dewPoint, unit)}
-* 💨 **પવનની ઝડપ:** ${formatWindSpeed(current.windSpeed)} (ઝોંકા: ${formatWindSpeed(current.windGusts)})
-
-હાલની વાતાવરણીય સ્થિતિ **${cond}** છે.`;
+        return `${location.name}માં અત્યારે તાપમાન આશરે **${formatTemp(current.temperature, unit)}** છે (અનુભવાતું: **${formatTemp(current.feelsLike, unit)}**) અને વાતાવરણ ${cond} છે. આજનું મહત્તમ તાપમાન **${formatTemp(targetDay.tempMax, unit)}** અને રાત્રિનું લઘુત્તમ **${formatTemp(targetDay.tempMin, unit)}** રહેશે.`;
       }
-
-      return `### 🌡️ Temperature in ${location.name}
-
-The current temperature in **${location.name}** is **${formatTemp(current.temperature, unit)}** (feels like **${formatTemp(current.feelsLike, unit)}**).
-
-* 🔺 **Today's High:** **${formatTemp(targetDay.tempMax, unit)}**
-* 🔻 **Overnight Low:** **${formatTemp(targetDay.tempMin, unit)}**
-* 💧 **Relative Humidity:** ${current.humidity}% | Dew Point: ${formatTemp(current.dewPoint, unit)}
-* 💨 **Wind Speed:** ${formatWindSpeed(current.windSpeed)} with gusts up to ${formatWindSpeed(current.windGusts)}
-
-Current atmospheric conditions are **${current.conditionText.toLowerCase()}**.`;
+      return `Right now in ${location.name}, it's around **${formatTemp(current.temperature, unit)}** (feels like **${formatTemp(current.feelsLike, unit)}**) with ${current.conditionText.toLowerCase()} skies. Today's high will reach about **${formatTemp(targetDay.tempMax, unit)}**, dropping to **${formatTemp(targetDay.tempMin, unit)}** tonight.`;
     }
 
-    // 4. 7-Day Extended Forecast
+    // 8. 7-Day Extended Forecast
     if (
       qLower.includes("7-day") ||
       qLower.includes("7 day") ||
@@ -1729,89 +1755,38 @@ Current atmospheric conditions are **${current.conditionText.toLowerCase()}**.`;
       query.includes("7 दिन") ||
       query.includes("7 દિવસ")
     ) {
+      const weekMax = Math.max(...daily.slice(0, 7).map((d) => d.tempMax));
       if (lang === "hi") {
-        return `### 📅 ${location.name} का 7 दिनों का मौसम पूर्वानुमान
+        return `अगले 7 दिनों में ${location.name} का मौसम कुल मिलाकर स्थिर रहेगा, जिसमें अधिकतम तापमान **${formatTemp(weekMax, unit)}** तक जा सकता है। यहाँ पूरे सप्ताह का संक्षिप्त विवरण है:
 
-**${location.name}** के लिए आगामी 7 दिनों का मौसम परिदृश्य:
-
-| दिन | तारीख | मौसम | अधिकतम / न्यूनतम | बारिश % |
-| :--- | :--- | :--- | :--- | :--- |
-${daily.slice(0, 7).map((d) => `| **${this.getLocalizedDayName(d.dayName, "hi")}** | ${d.date.slice(5)} | ${this.getLocalizedCondition(d.conditionText, "hi")} | **${formatTemp(d.tempMax, unit)}** / ${formatTemp(d.tempMin, unit)} | 🌧️ ${d.precipitationProb}% |`).join("\n")}
-
-> 📈 **साप्ताहिक रुझान:** अधिकतम तापमान ${formatTemp(Math.max(...daily.slice(0, 7).map((d) => d.tempMax)), unit)} तक जाने की संभावना है।`;
+${daily.slice(0, 7).map((d) => `• **${this.getLocalizedDayName(d.dayName, "hi")}**: ${formatTemp(d.tempMax, unit)} / ${formatTemp(d.tempMin, unit)}, ${this.getLocalizedCondition(d.conditionText, "hi")} (बारिश: ${d.precipitationProb}%)`).join("\n")}`;
       }
-
       if (lang === "gu") {
-        return `### 📅 ${location.name}નું 7 દિવસનું હવામાન
+        return `આગામી 7 દિવસમાં ${location.name}માં હવામાન મોટાભાગે સામાન્ય રહેશે, જેમાં મહત્તમ તાપમાન **${formatTemp(weekMax, unit)}** સુધી પહોંચી શકે છે. આખા અઠવાડિયાની ટૂંકી માહિતી:
 
-**${location.name}** માટે આગામી 7 દિવસનું હવામાન પૂર્વાનુમાન:
-
-| વાર | તારીખ | વાતાવરણ | મહત્તમ / લઘુત્તમ | વરસાદ % |
-| :--- | :--- | :--- | :--- | :--- |
-${daily.slice(0, 7).map((d) => `| **${this.getLocalizedDayName(d.dayName, "gu")}** | ${d.date.slice(5)} | ${this.getLocalizedCondition(d.conditionText, "gu")} | **${formatTemp(d.tempMax, unit)}** / ${formatTemp(d.tempMin, unit)} | 🌧️ ${d.precipitationProb}% |`).join("\n")}
-
-> 📈 **સાપ્તાહિક પ્રવાહ:** મહત્તમ તાપમાન ${formatTemp(Math.max(...daily.slice(0, 7).map((d) => d.tempMax)), unit)} સુધી પહોંચી શકે છે.`;
+${daily.slice(0, 7).map((d) => `• **${this.getLocalizedDayName(d.dayName, "gu")}**: ${formatTemp(d.tempMax, unit)} / ${formatTemp(d.tempMin, unit)}, ${this.getLocalizedCondition(d.conditionText, "gu")} (વરસાદ: ${d.precipitationProb}%)`).join("\n")}`;
       }
+      return `Over the next 7 days, weather in ${location.name} looks fairly steady, with temperatures peaking around **${formatTemp(weekMax, unit)}**. Here's a quick look at the week ahead:
 
-      return `### 📅 7-Day Extended Forecast for ${location.name}
-
-Here is the projected meteorological outlook for **${location.name}** over the next 7 days:
-
-| Day | Date | Condition | High / Low | Rain % |
-| :--- | :--- | :--- | :--- | :--- |
-${daily.slice(0, 7).map((d) => `| **${d.dayName}** | ${d.date.slice(5)} | ${d.conditionText} | **${formatTemp(d.tempMax, unit)}** / ${formatTemp(d.tempMin, unit)} | 🌧️ ${d.precipitationProb}% |`).join("\n")}
-
-> 📈 **Week Trend:** Temperatures will peak at ${formatTemp(Math.max(...daily.slice(0, 7).map((d) => d.tempMax)), unit)}.`;
+${daily.slice(0, 7).map((d) => `• **${d.dayName}**: High ${formatTemp(d.tempMax, unit)} / Low ${formatTemp(d.tempMin, unit)}, ${d.conditionText} (Rain: ${d.precipitationProb}%)`).join("\n")}`;
     }
 
-    // 5. Default Rich Meteorological Overview
+    // 9. Default General Today Overview ("What's the weather like today?")
     if (lang === "hi") {
-      return `### ☀️ ${location.name} में आज का मौसम
-
-**${location.name}** में वर्तमान में मौसम **${cond}** है और तापमान **${formatTemp(current.temperature, unit)}** (महसूस: **${formatTemp(current.feelsLike, unit)}**) बना हुआ है।
-
-* 🔺 **आज का अधिकतम तापमान:** **${formatTemp(targetDay.tempMax, unit)}** / **न्यूनतम:** **${formatTemp(targetDay.tempMin, unit)}**
-* 💧 **आर्द्रता (नमी):** ${current.humidity}% | ओस बिंदु: ${formatTemp(current.dewPoint, unit)}
-* 💨 **हवा की गति:** ${formatWindSpeed(current.windSpeed)} (झोंके: ${formatWindSpeed(current.windGusts)})
-* ☀️ **UV इंडेक्स:** ${current.uvIndex} (${current.uvIndex > 6 ? "उच्च — सनस्क्रीन का उपयोग करें" : "मध्यम"})
-* 🍃 **वायु गुणवत्ता:** ${aqi.aqi} AQI — **${aqiCat}** (PM2.5: ${aqi.pm25} µg/m³)
-
-आज दिनभर मौसम स्थिर और अनुकूल रहने की उम्मीद है।`;
+      return `${location.name} में इस समय मौसम ${cond} बना हुआ है और तापमान लगभग **${formatTemp(current.temperature, unit)}** है (महसूस: **${formatTemp(current.feelsLike, unit)}**)। आज दिन का अधिकतम तापमान **${formatTemp(targetDay.tempMax, unit)}** के आसपास रहेगा${current.humidity > 70 ? ", हवा में थोड़ी नमी रहेगी" : ""}। कुल मिलाकर मौसम काफी सामान्य और सुखद है।`;
     }
-
     if (lang === "gu") {
-      return `### ☀️ ${location.name}માં આજનું હવામાન
-
-હાલમાં **${location.name}**માં વાતાવરણ **${cond}** છે અને તાપમાન **${formatTemp(current.temperature, unit)}** (અનુભવાતું તાપમાન: **${formatTemp(current.feelsLike, unit)}**) નોંધાયું છે.
-
-* 🔺 **આજનું મહત્તમ તાપમાન:** **${formatTemp(targetDay.tempMax, unit)}** / **લઘુત્તમ:** **${formatTemp(targetDay.tempMin, unit)}**
-* 💧 **ભેજ:** ${current.humidity}% | ડ્યૂ પોઈન્ટ: ${formatTemp(current.dewPoint, unit)}
-* 💨 **પવનની ઝડપ:** ${formatWindSpeed(current.windSpeed)} (ઝોંકા: ${formatWindSpeed(current.windGusts)})
-* ☀️ **UV ઇન્ડેક્સ:** ${current.uvIndex} (${current.uvIndex > 6 ? "વધુ — સનસ્ક્રીન વાપરવાની સલાહ" : "મધ્યમ"})
-* 🍃 **હવાની ગુણવત્તા:** ${aqi.aqi} AQI — **${aqiCat}** (PM2.5: ${aqi.pm25} µg/m³)
-
-દિવસ દરમિયાન હવામાન સ્થિર અને સુખદ રહેશે.`;
+      return `${location.name}માં અત્યારે વાતાવરણ ${cond} છે અને તાપમાન આશરે **${formatTemp(current.temperature, unit)}** નોંધાયું છે (અનુભવાતું: **${formatTemp(current.feelsLike, unit)}**). આજે મહત્તમ તાપમાન **${formatTemp(targetDay.tempMax, unit)}** સુધી રહેશે${current.humidity > 70 ? ", હવામાં થોડો ભેજ છે" : ""}. સમગ્ર રીતે હવામાન અનુકૂળ અને સારું છે.`;
     }
-
-    // Default English
-    return `### ☀️ Weather in ${location.name}
-
-In **${location.name}**, conditions are currently **${current.conditionText}** with a temperature of **${formatTemp(current.temperature, unit)}** (feels like **${formatTemp(current.feelsLike, unit)}**).
-
-* 🔺 **Today's High:** **${formatTemp(targetDay.tempMax, unit)}** / **Low:** **${formatTemp(targetDay.tempMin, unit)}**
-* 💧 **Relative Humidity:** ${current.humidity}% | Dew point: ${formatTemp(current.dewPoint, unit)}
-* 💨 **Wind:** ${formatWindSpeed(current.windSpeed)} with gusts up to ${formatWindSpeed(current.windGusts)}
-* ☀️ **UV Index:** ${current.uvIndex} (${current.uvIndex > 6 ? "High — Sunscreen recommended" : "Moderate"})
-* 🍃 **Air Quality:** ${aqi.aqi} AQI — **${aqi.category}** (PM2.5: ${aqi.pm25} µg/m³)
-
-Atmospheric conditions are steady and comfortable throughout the day.`;
+    return `It's ${current.conditionText.toLowerCase()} right now in ${location.name}, with the temperature around **${formatTemp(current.temperature, unit)}** (feels like **${formatTemp(current.feelsLike, unit)}**). Today will reach a high near **${formatTemp(targetDay.tempMax, unit)}**${current.humidity > 70 ? ", with a bit of humidity in the air" : ""}. Overall, it's pretty comfortable outside—nothing too unusual.`;
   }
 
   /**
-   * Google Gemini LLM API Call with multilingual weather grounding
+   * Google Gemini LLM API Call with conversational multi-turn context and meteorological grounding
    */
   private static async callGeminiLLM(
     prompt: string,
+    history: { role: string; content?: string }[],
     location: LocationData,
     current: CurrentWeather,
     hourly: HourlyForecastItem[],
@@ -1824,26 +1799,81 @@ Atmospheric conditions are steady and comfortable throughout the day.`;
   ): Promise<string> {
     const langInstructions =
       lang === "gu"
-        ? "Language Requirement: The user requested Gujarati. You MUST respond strictly in authentic GUJARATI (ગુજરાતી લિપિ). Use natural Gujarati weather terms (તાપમાન, વરસાદ, ભેજ, પવનની ઝડપ, છત્રી, સ્વચ્છ આકાશ)."
+        ? "Language Requirement: The user prefers GUJARATI (ગુજરાતી). Respond strictly in natural, everyday conversational Gujarati (રોજિંદી બોલચાલની ભાષા). Avoid overly stiff, formal, or textbook translation. Speak like a friendly local meteorologist or friend sharing weather advice."
         : lang === "hi"
-        ? "Language Requirement: The user requested Hindi. You MUST respond strictly in authentic HINDI (देवनागरी लिपि). Use natural Hindi weather terms (तापमान, बारिश, आर्द्रता, हवा की गति, छाता, साफ़ मौसम)."
-        : "Language Requirement: Respond in clear, professional English.";
+        ? "Language Requirement: The user prefers HINDI (हिंदी). Respond strictly in natural, everyday conversational Hindi (स्वाभाविक और सरल बोलचाल की हिंदी). Avoid rigid official-bulletin language. Speak like a friendly, knowledgeable person sharing weather advice."
+        : "Language Requirement: Respond in clear, friendly, and natural conversational English.";
 
-    const systemPrompt = `You are WeatherGPT, an advanced multilingual conversational AI for weather forecasting, alerts, and climate intelligence.
-${langInstructions}
-You have access to real-time, verified meteorological data:
-Location: ${location.name}, ${[location.admin2, location.admin1, location.country].filter(Boolean).join(", ")}
-Current Weather: Temp ${formatTemp(current.temperature, unit)} (Feels like ${formatTemp(current.feelsLike, unit)}), Condition: ${current.conditionText}, Humidity: ${current.humidity}%, Wind: ${current.windSpeed} km/h (Gusts: ${current.windGusts} km/h), UV: ${current.uvIndex}, Pressure: ${current.pressure} hPa, Visibility: ${current.visibility.toFixed(1)} km.
-Air Quality: ${aqi.aqi} (${aqi.category}, PM2.5: ${aqi.pm25} µg/m³).
-Forecast Summary: Today High ${formatTemp(daily[0]?.tempMax || current.tempMax, unit)}/Low ${formatTemp(daily[0]?.tempMin || current.tempMin, unit)} (Rain: ${daily[0]?.precipitationProb}%), Tomorrow High ${formatTemp(daily[1]?.tempMax || current.tempMax, unit)}/Low ${formatTemp(daily[1]?.tempMin || current.tempMin, unit)} (Rain: ${daily[1]?.precipitationProb}%).
-Domain Analysis: ${recommendation.title} — Status: ${recommendation.status}, Score: ${recommendation.score}/100.
-User Temperature Preference: °${unit} (Always state temperatures in °${unit}).
+    // Hourly outlook summary for next 36 hours covering today and tomorrow
+    const hourlySummary = hourly
+      .slice(0, 36)
+      .filter((_, idx) => idx % 3 === 0)
+      .map((h) => {
+        const d = new Date(h.time);
+        const timeStr = d.toLocaleTimeString([], { hour: "numeric", hour12: true });
+        return `${timeStr}: ${formatTemp(h.temperature, unit)}, ${h.conditionText}, Rain: ${h.precipitationProb}%`;
+      })
+      .join(" | ");
 
-Rules:
-1. Ground your answer strictly in the provided real weather metrics. Never invent weather.
-2. Be conversational, crisp, helpful, and structured with markdown headings and bullet points.
-3. If weather data is unavailable, clearly state so in the target language.
-4. Always format temperatures in °${unit}.`;
+    // 7-day outlook summary
+    const dailySummary = daily
+      .slice(0, 7)
+      .map(
+        (d) =>
+          `${d.dayName}: High ${formatTemp(d.tempMax, unit)} / Low ${formatTemp(d.tempMin, unit)}, ${d.conditionText}, Rain: ${d.precipitationProb}%`
+      )
+      .join("\n");
+
+    const systemPrompt = `You are WeatherGPT, a friendly, knowledgeable, and intuitive weather companion.
+You talk like a real human explaining the weather to a friend—warm, natural, direct, and conversational.
+
+CORE CONVERSATIONAL PRINCIPLES:
+1. Sound like a real person: Speak in simple, natural language. Avoid sounding like a formal weather bulletin, technical report, or machine reading values from a database.
+2. Directly answer first: Answer the user's specific question upfront in the very first sentence. For simple questions ("Will it rain?", "What should I wear?"), give a clear, direct answer immediately.
+3. Weave details naturally: Mention key weather metrics (like temperature, rain chance) fluidly in your sentences rather than dumping bulleted lists of raw numbers. Only use bullet points or tables if the user explicitly asks for a breakdown, schedule, or comparison.
+4. Give practical everyday advice: When relevant, suggest what to wear, outdoor activity comfort, carrying an umbrella, or road travel tips based on the weather conditions.
+5. Context-aware in conversation: In multi-turn dialogue (for example, if the user asks "What about evening?"), seamlessly connect with the previous context (location, day, subject) instead of asking them to repeat details.
+6. Strictly ground in real data: All weather numbers must come from the meteorological data provided below. Never invent or hallucinate weather. If rain probability is moderate (e.g. 30-40%), express realistic nuance ("a few passing showers are possible").
+7. Tone: Friendly, helpful, and down-to-earth. Do NOT be overly cheerful or childish. Use a fitting emoji (like 🌧️, ☀️, ⛅, 🧣) only when it naturally fits, and keep them sparse (1-2 max).
+8. STRICTLY AVOID THESE ROBOTIC HABITS:
+   - Do NOT start with "According to the weather data...", "Based on the provided information...", "As an AI..."
+   - Do NOT say "Please be advised", "It is recommended that", or "Weather conditions indicate".
+   - Do NOT repeat the user's question back to them.
+   - Do NOT dump irrelevant metrics (like pressure, dew point, or station coordinates) unless specifically asked.
+9. Units: Always state temperatures in °${unit}.
+
+METEOROLOGICAL GROUND TRUTH:
+Location: ${location.name}${location.admin1 ? `, ${location.admin1}` : ""}, ${location.country}
+Current Weather: ${current.conditionText}, ${formatTemp(current.temperature, unit)} (Feels like ${formatTemp(current.feelsLike, unit)}), Humidity: ${current.humidity}%, Wind: ${formatWindSpeed(current.windSpeed, "kmh")}, UV: ${current.uvIndex}
+Air Quality: ${aqi.aqi} (${aqi.category})
+Today's Forecast: High ${formatTemp(daily[0]?.tempMax ?? current.tempMax, unit)} / Low ${formatTemp(daily[0]?.tempMin ?? current.tempMin, unit)}, Rain Chance: ${daily[0]?.precipitationProb ?? 0}% (${daily[0]?.conditionText ?? current.conditionText})
+Tomorrow's Forecast: High ${formatTemp(daily[1]?.tempMax ?? current.tempMax, unit)} / Low ${formatTemp(daily[1]?.tempMin ?? current.tempMin, unit)}, Rain Chance: ${daily[1]?.precipitationProb ?? 0}% (${daily[1]?.conditionText ?? "Similar"})
+
+Hourly Trend (Next 36h):
+${hourlySummary}
+
+7-Day Overview:
+${dailySummary}
+
+${langInstructions}`;
+
+    // Format conversation history for multi-turn conversational memory
+    const contents: any[] = [];
+    const recentHistory = (history || [])
+      .slice(-6)
+      .filter((m) => m.content && (m.role === "user" || m.role === "assistant"));
+
+    for (const msg of recentHistory) {
+      contents.push({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: msg.content || "" }],
+      });
+    }
+
+    contents.push({
+      role: "user",
+      parts: [{ text: prompt }],
+    });
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
@@ -1851,15 +1881,14 @@ Rules:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: `${systemPrompt}\n\nUser Question: ${prompt}` }],
-            },
-          ],
+          system_instruction: {
+            parts: [{ text: systemPrompt }],
+          },
+          contents,
           generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 600,
+            temperature: 0.7,
+            topP: 0.95,
+            maxOutputTokens: 500,
           },
         }),
       }

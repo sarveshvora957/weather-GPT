@@ -48,13 +48,20 @@ export const WeatherAIView: React.FC<WeatherAIViewProps> = ({
     setLoading(true);
 
     try {
+      const userApiKey =
+        typeof window !== "undefined"
+          ? localStorage.getItem("weathergpt_gemini_key") || undefined
+          : undefined;
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: text,
+          history: messages.map((m) => ({ role: m.role, content: m.content })),
           activeLocation: location,
           isDemoMode: true,
+          userApiKey,
           unit,
         }),
       });

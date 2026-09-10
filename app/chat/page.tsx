@@ -139,6 +139,11 @@ function ChatContent() {
     history: AIChatMessage[],
     language: "auto" | "en" | "hi" | "gu" = "auto"
   ): Promise<AIChatMessage> => {
+    const userApiKey =
+      typeof window !== "undefined"
+        ? localStorage.getItem("weathergpt_gemini_key") || undefined
+        : undefined;
+
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -153,6 +158,7 @@ function ChatContent() {
         conversationId: activeConvId,
         activeLocation: currentLocation,
         isDemoMode: true,
+        userApiKey,
         unit,
         language,
       }),
